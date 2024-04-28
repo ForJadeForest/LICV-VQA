@@ -18,11 +18,11 @@ from transformers import IdeficsProcessor
 
 from icv_src.icv_datasets.vqa_dataset import load_vqav2_ds, load_okvqa_ds
 from icv_src.icv_model.icv_idefics import ICVIdeficsForVisionText2Text
-from icv_src.metrics.vqa_metric import (
+from icv_src.metrics import (
     compute_vqa_accuracy,
     postprocess_vqa_generation,
+    postprocess_ok_vqa_generation,
 )
-from icv_src.metrics.okvqa_utils import postprocess_ok_vqa_generation
 
 
 @hydra.main(config_path="config", config_name="inference.yaml")
