@@ -6,8 +6,6 @@ defaults:
 run_name: ???
 device: 'cuda'
 
-val_ques_path: ${oc.env:VQAV2_PATH}/v2_OpenEnded_mscoco_val2014_questions.json
-val_ann_path: ${oc.env:VQAV2_PATH}/v2_mscoco_val2014_annotations.json
 result_path: ${oc.env:RESULT_DIR}
 model_cpk_dir: ${MODEL_CPK_DIR}
 model_name: idefics-9b
