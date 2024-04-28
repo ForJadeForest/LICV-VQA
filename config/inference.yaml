@@ -1,0 +1,21 @@
+defaults:
+  - _self_
+  - data_cfg: icv_data
+
+
+
+test_icv: True
+bs: 4
+run_name: debug
+result_dir: ${oc.env:RESULT_DIR}
+device: 'cuda'
+val_ques_path: ${oc.env:VQAV2_PATH}/v2_OpenEnded_mscoco_val2014_questions.json
+val_ann_path: ${oc.env:VQAV2_PATH}/v2_mscoco_val2014_annotations.json
+
+
+hydra:
+  run:
+    dir: ${result_dir}/hydra_output/${hydra.job.name}/${run_name}/${now:%Y-%m-%d_%H-%M-%S}
+  sweep:
+    dir: ${result_dir}/hydra_output/${hydra.job.name}/${run_name}/${now:%Y-%m-%d_%H-%M-%S}
+    subdir: ${hydra.job.override_dirname}

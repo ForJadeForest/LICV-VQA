@@ -1,0 +1,5 @@
+_target_: icv_src.icv_encoder.global_icv_encoder.GlobalICVEncoder
+
+use_sigmoid: True
+alpha_learnable: True
+alpha_init_value: 0.

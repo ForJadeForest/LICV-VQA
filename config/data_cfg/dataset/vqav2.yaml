@@ -1,0 +1,18 @@
+_target_: icv_src.icv_datasets.vqa_dataset.VQAV2Dataset
+
+name: vqav2
+root_dir: ${oc.env:VQAV2_PATH}
+train_coco_dataset_root: ${oc.env:COCO_PATH}/mscoco2014/train2014
+val_coco_dataset_root: ${oc.env:COCO_PATH}/mscoco2014/val2014
+few_shot_num: 32
+split: 'train'
+max_train_size: -1
+
+instrction: "Instruction: provide an answer to the question. Use the image to answer.\n"
+# use for eval
+# val_ques_path: ${oc.env:VQAV2_PATH}/v2_OpenEnded_mscoco_val2014_questions.json
+# val_ann_path: ${oc.env:VQAV2_PATH}/v2_mscoco_val2014_annotations.json
+
+
+# train_ques_path: ${oc.env:VQAV2_PATH}/v2_OpenEnded_mscoco_train2014_questions.json
+# train_ann_path: ${oc.env:VQAV2_PATH}/v2_mscoco_train2014_annotations.json

@@ -1,0 +1,21 @@
+defaults:
+  - icv_encoder: global_icv_encoder
+
+hard_loss_weight: 0.
+
+init_temperature: 1.
+decay_ratio: -1
+decay_per_step: -1
+min_tmeprature: 1.
+learnable_t: False
+
+
+kl_eps: 1e-10
+log_alpha: True
+
+alpha_lr: 1e-2
+icv_lr: 1e-2
+
+weight_decay: 1e-3
+warm_steps: 0.1
+strategy: ${trainer.strategy}
