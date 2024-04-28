@@ -10,7 +10,7 @@ min_tmeprature: 1.
 learnable_t: False
 
 
-kl_eps: 1e-8
+kl_eps: 1e-6
 log_alpha: True
 
 alpha_lr: 1e-2
