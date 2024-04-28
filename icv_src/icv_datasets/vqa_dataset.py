@@ -195,7 +195,6 @@ def load_okvqa_ds(
 
         x["image"] = img_path
         x["idx"] = idx
-        print(x["answers"])
         x["answer"] = [a[0]["answer"] for a in x["answers"]]
         return x
 
