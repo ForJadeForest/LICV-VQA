@@ -24,7 +24,7 @@ from icv_src.metrics.vqa_metric import (
 )
 
 
-@hydra.main(config_path="config", config_name="get_icv.yaml")
+@hydra.main(config_path="config", config_name="heuristic_icv.yaml")
 def main(cfg: DictConfig):
     icv_length = cfg.icv_length
     alpha_value = cfg.alpha

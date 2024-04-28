@@ -3,16 +3,13 @@ defaults:
   - data_cfg: icv_data
 
 
-
-test_icv: True
-bs: 4
-run_name: vqav2_icv_1e-4icv-lr_instrction_fix0.1alphe_1w_init0.025alpha
+run_name: ???
 device: 'cuda'
 result_dir: ${oc.env:RESULT_DIR}
-val_ques_path: /data/share/pyz/data/vqav2/v2_OpenEnded_mscoco_val2014_questions.json
-val_ann_path: /data/share/pyz/data/vqav2/v2_mscoco_val2014_annotations.json
-result_path: /home/hcd/ok_vqa_test/icl_compression/icv_dir
-use_sigmoid: True
+val_ques_path: ${oc.env:VQAV2_PATH}/v2_OpenEnded_mscoco_val2014_questions.json
+val_ann_path: ${oc.env:VQAV2_PATH}/v2_mscoco_val2014_annotations.json
+result_path: ${oc.env:RESULT_DIR}
+
 icv_length: 4
 
 hydra:
