@@ -52,7 +52,7 @@ def main(cfg: DictConfig):
             "validation",
         )
         post_process_fun = postprocess_vqa_generation
-    else:
+    elif cfg.data_cfg.dataset.name == "okvqa":
         val_ds = load_okvqa_ds(
             cfg.data_cfg.dataset.root_dir,
             cfg.data_cfg.dataset.train_coco_dataset_root,
@@ -60,6 +60,9 @@ def main(cfg: DictConfig):
             "validation",
         )
         post_process_fun = postprocess_ok_vqa_generation
+    else:
+        raise ValueError(f"{cfg.data_cfg.dataset.name=} error")
+
     model = ICVIdeficsForVisionText2Text.from_pretrained(cfg.model_name_or_path)
     model = model.to(cfg.device, torch.bfloat16)
     processor = IdeficsProcessor.from_pretrained(cfg.model_name_or_path)
