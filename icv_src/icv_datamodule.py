@@ -11,14 +11,14 @@ class VQAICVDataModule(pl.LightningDataModule):
     def __init__(
         self,
         data_cfg,
+        processor,
     ) -> None:
         super().__init__()
         self.save_hyperparameters()
 
-        self.lvlm_processor = IdeficsProcessor.from_pretrained(data_cfg.model_name)
-        self.lvlm_processor.tokenizer.padding_side = "right"
+        self.processor = processor
 
-        self.collator_data = partial(collator_data, processor=self.lvlm_processor)
+        self.collator_data = partial(collator_data, processor=self.processor)
         self.ds_factory = hydra.utils.instantiate(
             self.hparams.data_cfg.dataset, _partial_=True
         )

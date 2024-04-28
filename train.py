@@ -62,13 +62,14 @@ def main(cfg: DictConfig):
 
     model = ICVIdeficsForVisionText2Text.from_pretrained(cfg.model_name_or_path)
     processor = IdeficsProcessor.from_pretrained(cfg.model_name_or_path)
+    processor.tokenizer.padding_side = "right"
 
     model = VQAICVModule(
         model=model,
         processor=processor,
         module_cfg=cfg.icv_module,
     )
-    data_module = VQAICVDataModule(data_cfg=cfg.data_cfg)
+    data_module = VQAICVDataModule(data_cfg=cfg.data_cfg, processor=processor)
 
     trainer.fit(
         model,

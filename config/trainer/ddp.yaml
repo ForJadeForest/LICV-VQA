@@ -1,6 +1,6 @@
 accelerator: "gpu"
 devices: 1
-precision: "bf16-mixed"
+precision: "16-mixed"
 default_root_dir: "${result_dir}"
 strategy: "ddp_find_unused_parameters_true"
 max_epochs: 10

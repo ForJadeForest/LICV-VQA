@@ -40,7 +40,7 @@ def main(cfg: DictConfig):
     processor = IdeficsProcessor.from_pretrained(model_cpk_path)
 
     prompts = []
-    prompts.extend([cfg.data_cfg.instruction])
+    prompts.extend([cfg.data_cfg.dataset.instruction])
 
     ice_list = [train_ds[i] for i in range(cfg.icv_length)]
 
