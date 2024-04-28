@@ -22,6 +22,7 @@ from icv_src.metrics.vqa_metric import (
     compute_vqa_accuracy,
     postprocess_vqa_generation,
 )
+from icv_src.metrics.okvqa_utils import postprocess_ok_vqa_generation
 
 
 @hydra.main(config_path="config", config_name="inference.yaml")
@@ -42,10 +43,7 @@ def main(cfg: DictConfig):
     else:
         icv = None
         alpha = None
-    model_cpk_dir = Path(cfg.result_dir) / "model_cpk" / cfg.run_name
-    model = ICVIdeficsForVisionText2Text.from_pretrained(cfg.model_name_or_path)
-    model = model.to(cfg.device, torch.bfloat16)
-    processor = IdeficsProcessor.from_pretrained(cfg.model_name_or_path)
+
     if cfg.data_cfg.dataset.name == "vqav2":
         val_ds = load_vqav2_ds(
             cfg.data_cfg.dataset.root_dir,
@@ -53,20 +51,27 @@ def main(cfg: DictConfig):
             cfg.data_cfg.dataset.val_coco_dataset_root,
             "validation",
         )
+        post_process_fun = postprocess_vqa_generation
     else:
         val_ds = load_okvqa_ds(
-            cfg.data_cfg.dataset.root_idr,
+            cfg.data_cfg.dataset.root_dir,
             cfg.data_cfg.dataset.train_coco_dataset_root,
             cfg.data_cfg.dataset.val_coco_dataset_root,
             "validation",
         )
+        post_process_fun = postprocess_ok_vqa_generation
+    model = ICVIdeficsForVisionText2Text.from_pretrained(cfg.model_name_or_path)
+    model = model.to(cfg.device, torch.bfloat16)
+    processor = IdeficsProcessor.from_pretrained(cfg.model_name_or_path)
+    if cfg.test_num != -1:
+        val_ds = val_ds.select(range(cfg.test_num))
 
     results_dict = inference(
         val_ds,
         model,
         processor,
         cfg.bs,
-        cfg.data_cfg.dataset.instrction,
+        cfg.data_cfg.dataset.instruction,
         icv,
         alpha,
     )
@@ -74,15 +79,15 @@ def main(cfg: DictConfig):
     for idx in results_dict:
         preds.append(
             {
-                "answer": postprocess_vqa_generation(results_dict[idx]["prediction"])
+                "answer": post_process_fun(results_dict[idx]["prediction"])
                 .replace("\n", "")
                 .strip(),
                 "question_id": results_dict[idx]["question_id"],
             }
         )
 
-    val_ques_path = cfg.val_ques_path
-    val_ann_path = cfg.val_ann_path
+    val_ques_path = cfg.data_cfg.dataset.val_ques_path
+    val_ann_path = cfg.data_cfg.dataset.val_ann_path
     acc = compute_vqa_accuracy(preds, val_ques_path, val_ann_path)
 
     with open(save_path / "result.json", "w") as f:

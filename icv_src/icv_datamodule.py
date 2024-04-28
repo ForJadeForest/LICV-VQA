@@ -1,10 +1,9 @@
 from functools import partial
 
-import hydra
 import pytorch_lightning as pl
-import torch
-from torch.utils.data import DataLoader, Dataset
-from transformers import AutoTokenizer, AutoProcessor, IdeficsProcessor
+from torch.utils.data import DataLoader
+
+from .icv_datasets.vqa_dataset import VQAV2Dataset
 
 
 class VQAICVDataModule(pl.LightningDataModule):
@@ -19,14 +18,20 @@ class VQAICVDataModule(pl.LightningDataModule):
         self.processor = processor
 
         self.collator_data = partial(collator_data, processor=self.processor)
-        self.ds_factory = hydra.utils.instantiate(
-            self.hparams.data_cfg.dataset, _partial_=True
-        )
         self.data_cfg = data_cfg
 
     def setup(self, stage: str) -> None:
         if stage == "fit":
-            self.train_ds = self.ds_factory()
+            self.train_ds = VQAV2Dataset(
+                name=self.data_cfg.dataset.name,
+                root_dir=self.data_cfg.dataset.root_dir,
+                val_coco_dataset_root=self.data_cfg.dataset.val_coco_dataset_root,
+                instruction=self.data_cfg.dataset.instruction,
+                few_shot_num=self.data_cfg.dataset.few_shot_num,
+                max_train_size=self.data_cfg.dataset.max_train_size,
+                split="train",
+                val_ann_file=getattr(self.data_cfg.dataset, "val_ann_file", None),
+            )
 
     def train_dataloader(self):
         return DataLoader(

@@ -15,10 +15,11 @@ class VQAV2Dataset(Dataset):
         root_dir,
         train_coco_dataset_root,
         val_coco_dataset_root,
-        instrction="",
+        instruction="",
         few_shot_num=8,
         max_train_size=10000,
         split="train",
+        val_ann_file=None,
     ):
         super().__init__()
         if name == "vqav2":
@@ -27,6 +28,7 @@ class VQAV2Dataset(Dataset):
                 train_coco_dataset_root,
                 val_coco_dataset_root,
                 split=split,
+                val_ann_file=val_ann_file,
             )
         elif name == "okvqa":
             self.ds = load_okvqa_ds(
@@ -39,7 +41,7 @@ class VQAV2Dataset(Dataset):
             random_select_idx = np.random.randint(0, len(self.ds), size=max_train_size)
             self.ds = self.ds.select(random_select_idx)
         self.few_shot_num = few_shot_num
-        self.instrction = instrction
+        self.instruction = instruction
 
     def __len__(self):
         return len(self.ds)
@@ -53,8 +55,8 @@ class VQAV2Dataset(Dataset):
         in_context_example = [self.ds[idx] for idx in few_shot_index]
 
         prompt = []
-        if self.instrction:
-            prompt = [self.instrction]
+        if self.instruction:
+            prompt = [self.instruction]
         for ice in in_context_example:
             prompt.append(ice["image"])
             prompt.append(f"Question:{ice['question']} Short answer:{ice['answer']}\n")
@@ -77,12 +79,16 @@ def load_vqav2_ds(
     train_coco_dataset_root,
     val_coco_dataset_root,
     split=None,
+    val_ann_file=None,
 ):
     vqav2_root_dir = Path(vqav2_root_dir)
     train_ann = vqav2_root_dir / "v2_mscoco_train2014_annotations.json"
     train_ques = vqav2_root_dir / "v2_OpenEnded_mscoco_train2014_questions.json"
-    val_ann = vqav2_root_dir / "v2_mscoco_val2014_annotations_subdata.json"
-    val_ques = vqav2_root_dir / "v2_mscoco_val2014_question_subdata.json"
+    if val_ann_file is not None:
+        val_ann = vqav2_root_dir / val_ann_file
+    else:
+        val_ann = vqav2_root_dir / "v2_mscoco_val2014_annotations.json"
+    val_ques = vqav2_root_dir / "v2_OpenEnded_mscoco_val2014_questions.json"
 
     def preprocess(ann_file, ques_file):
         ann = json.load(open(ann_file))["annotations"]
