@@ -233,7 +233,7 @@ def icl_inference(
         else:
             prompts = [[] for _ in range(bs)]
 
-        sub_ice_idx_list = ice_idx_list[index * bs : index * bs + bs]
+        sub_ice_idx_list = ice_idx_list[index : index + bs]
 
         for i, sample in enumerate(batch):
             for ice_idx in sub_ice_idx_list[i]:
