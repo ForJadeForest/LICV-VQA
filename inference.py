@@ -47,6 +47,7 @@ def main(cfg: DictConfig):
         icv = None
         alpha = None
     split = "validation"
+    base_info = f"{str(datetime.datetime.now())}-{cfg.test_num=}-"
     if cfg.test_icl:
         split = None
 
@@ -56,6 +57,7 @@ def main(cfg: DictConfig):
             cfg.data_cfg.dataset.train_coco_dataset_root,
             cfg.data_cfg.dataset.val_coco_dataset_root,
             split,
+            val_ann_file=cfg.data_cfg.dataset.val_ann_path,
         )
 
         post_process_fun = postprocess_vqa_generation
@@ -78,7 +80,9 @@ def main(cfg: DictConfig):
     if cfg.test_num != -1:
         val_ds = val_ds.select(range(cfg.test_num))
 
-    result_dict = {}
+    result_file = save_path / "result.json"
+    if result_file.exists():
+        result_dict = json.load(open(save_path / "result.json"))
     if cfg.test_icv:
         results_dict = icv_inference(
             val_ds,
@@ -103,10 +107,11 @@ def main(cfg: DictConfig):
         val_ques_path = cfg.data_cfg.dataset.val_ques_path
         val_ann_path = cfg.data_cfg.dataset.val_ann_path
         acc = compute_vqa_accuracy(preds, val_ques_path, val_ann_path)
-        result_dict["icv result"] = acc
+
+        result_dict[base_info + "icv result"] = acc
         with open(save_path / "result.json", "w") as f:
             json.dump(result_dict, f, indent=4)
-        with open(save_path / "meta_info" / f"icv.json"):
+        with open(save_path / "meta_info" / f"icv.json", "w") as f:
             json.dump(results_dict, f, indent=4)
 
     if cfg.test_icl:
@@ -135,16 +140,15 @@ def main(cfg: DictConfig):
             val_ques_path = cfg.data_cfg.dataset.val_ques_path
             val_ann_path = cfg.data_cfg.dataset.val_ann_path
             acc = compute_vqa_accuracy(preds, val_ques_path, val_ann_path)
-            result_dict[f"shot{shot_num} result"] = acc
+            result_dict[base_info + f"shot{shot_num} result"] = acc
 
             with open(save_path / "result.json", "w") as f:
                 json.dump(result_dict, f, indent=4)
-            with open(save_path / "meta_info" / f"icl_shot{shot_num}.json"):
+            with open(save_path / "meta_info" / f"icl_shot{shot_num}.json", "w") as f:
                 json.dump(results_dict, f, indent=4)
 
-    print(acc)
 
-
+@torch.inference_mode()
 def icv_inference(
     val_ds,
     model,
@@ -159,9 +163,11 @@ def icv_inference(
     index = 0
 
     for batch in more_itertools.chunked(tqdm(val_ds, total=len(val_ds)), bs):
-        prompts = []
+
         if instruction:
             prompts = [[instruction] for _ in range(bs)]
+        else:
+            prompts = [[] for _ in range(bs)]
         for i, sample in enumerate(batch):
             prompts[i].extend(
                 [
@@ -222,22 +228,22 @@ def icl_inference(
         ice_idx_list.append(ice_idx)
 
     for batch in more_itertools.chunked(tqdm(val_ds, total=len(val_ds)), bs):
-        prompts = []
         if instruction:
             prompts = [[instruction] for _ in range(bs)]
+        else:
+            prompts = [[] for _ in range(bs)]
 
         sub_ice_idx_list = ice_idx_list[index * bs : index * bs + bs]
 
         for i, sample in enumerate(batch):
-            for sub_ice_idx in sub_ice_idx_list:
-                for ice_idx in sub_ice_idx:
-                    ice = train_ds[ice_idx]
-                    prompts[i].extend(
-                        [
-                            ice["image"],
-                            f"Question:{ice['question']} Short answer:{ice['answer']}",
-                        ]
-                    )
+            for ice_idx in sub_ice_idx_list[i]:
+                ice = train_ds[ice_idx]
+                prompts[i].extend(
+                    [
+                        ice["image"],
+                        f"Question:{ice['question']} Short answer:{ice['answer']}",
+                    ]
+                )
             prompts[i].extend(
                 [
                     sample["image"],
@@ -278,4 +284,5 @@ def icl_inference(
 
 if __name__ == "__main__":
     load_dotenv()
+    torch.set_grad_enabled(False)
     main()

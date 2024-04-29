@@ -13,8 +13,6 @@ few_shot_list: [1, 2, 4, 8, 16, 32]
 run_name: debug
 result_dir: ${oc.env:RESULT_DIR}
 device: 'cuda'
-val_ques_path: ${oc.env:VQAV2_PATH}/v2_OpenEnded_mscoco_val2014_questions.json
-val_ann_path: ${oc.env:VQAV2_PATH}/v2_mscoco_val2014_annotations.json
 
 model_name_or_path: "${oc.env:MODEL_CPK_DIR}/idefics-9b"
 
