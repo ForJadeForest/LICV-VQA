@@ -25,6 +25,7 @@ class VQAICVDataModule(pl.LightningDataModule):
             self.train_ds = VQAV2Dataset(
                 name=self.data_cfg.dataset.name,
                 root_dir=self.data_cfg.dataset.root_dir,
+                train_coco_dataset_root=self.data_cfg.dataset.train_coco_dataset_root,
                 val_coco_dataset_root=self.data_cfg.dataset.val_coco_dataset_root,
                 instruction=self.data_cfg.dataset.instruction,
                 few_shot_num=self.data_cfg.dataset.few_shot_num,
