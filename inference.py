@@ -81,8 +81,10 @@ def main(cfg: DictConfig):
         val_ds = val_ds.select(range(cfg.test_num))
 
     result_file = save_path / "result.json"
+    result_dict = {}
     if result_file.exists():
         result_dict = json.load(open(save_path / "result.json"))
+
     if cfg.test_icv:
         results_dict = icv_inference(
             val_ds,
