@@ -59,7 +59,6 @@ def main(cfg: DictConfig):
             split,
             val_ann_file=cfg.data_cfg.dataset.val_ann_path,
         )
-
         post_process_fun = postprocess_vqa_generation
     elif cfg.data_cfg.dataset.name == "okvqa":
         ds = load_okvqa_ds(
@@ -74,6 +73,8 @@ def main(cfg: DictConfig):
     if cfg.test_icl:
         val_ds = ds["validation"]
         train_ds = ds["train"]
+    else:
+        val_ds = ds
     model = ICVIdeficsForVisionText2Text.from_pretrained(cfg.model_name_or_path)
     model = model.to(cfg.device, torch.bfloat16)
     processor = IdeficsProcessor.from_pretrained(cfg.model_name_or_path)
