@@ -1,5 +1,6 @@
 from torch.utils.data import Dataset
 import numpy as np
+from .load_ds_utils import load_okvqa_ds, load_vqav2_ds
 
 
 class VQAV2Dataset(Dataset):
@@ -14,6 +15,7 @@ class VQAV2Dataset(Dataset):
         max_train_size=10000,
         split="train",
         val_ann_file=None,
+        filter_ques_type=None,
     ):
         super().__init__()
         if name == "vqav2":
@@ -23,6 +25,7 @@ class VQAV2Dataset(Dataset):
                 val_coco_dataset_root,
                 split=split,
                 val_ann_file=val_ann_file,
+                filter_ques_type=filter_ques_type,
             )
         elif name == "okvqa":
             self.ds = load_okvqa_ds(
@@ -30,6 +33,7 @@ class VQAV2Dataset(Dataset):
                 train_coco_dataset_root,
                 val_coco_dataset_root,
                 split=split,
+                filter_ques_type=filter_ques_type,
             )
         if max_train_size > 0 and len(self.ds) > max_train_size:
             random_select_idx = np.random.randint(0, len(self.ds), size=max_train_size)

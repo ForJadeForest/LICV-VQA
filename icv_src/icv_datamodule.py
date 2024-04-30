@@ -32,6 +32,7 @@ class VQAICVDataModule(pl.LightningDataModule):
                 max_train_size=self.data_cfg.dataset.max_train_size,
                 split="train",
                 val_ann_file=getattr(self.data_cfg.dataset, "val_ann_file", None),
+                filter_ques_type=self.data_cfg.dataset.filter_ques_type,
             )
 
     def train_dataloader(self):

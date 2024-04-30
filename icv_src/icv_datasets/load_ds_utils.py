@@ -5,20 +5,21 @@ from pathlib import Path
 
 
 def load_vqav2_ds(
-    vqav2_root_dir,
+    root_dir,
     train_coco_dataset_root,
     val_coco_dataset_root,
     split=None,
     val_ann_file=None,
+    filter_ques_type: str = None,
 ):
-    vqav2_root_dir = Path(vqav2_root_dir)
-    train_ann = vqav2_root_dir / "v2_mscoco_train2014_annotations.json"
-    train_ques = vqav2_root_dir / "v2_OpenEnded_mscoco_train2014_questions.json"
+    root_dir = Path(root_dir)
+    train_ann = root_dir / "v2_mscoco_train2014_annotations.json"
+    train_ques = root_dir / "v2_OpenEnded_mscoco_train2014_questions.json"
     if val_ann_file is not None:
-        val_ann = vqav2_root_dir / val_ann_file
+        val_ann = root_dir / val_ann_file
     else:
-        val_ann = vqav2_root_dir / "v2_mscoco_val2014_annotations.json"
-    val_ques = vqav2_root_dir / "v2_OpenEnded_mscoco_val2014_questions.json"
+        val_ann = root_dir / "v2_mscoco_val2014_annotations.json"
+    val_ques = root_dir / "v2_OpenEnded_mscoco_val2014_questions.json"
 
     def preprocess(ann_file, ques_file):
         ann = json.load(open(ann_file))["annotations"]
@@ -80,6 +81,19 @@ def load_vqav2_ds(
 
     ds = ds.rename_columns({"multiple_choice_answer": "answer"})
 
+    def ques_type_gene(examples):
+        examples["gen_question_type"] = [
+            que_type.split(" ")[0] for que_type in examples["question_type"]
+        ]
+        return examples
+
+    ds = ds.map(ques_type_gene, batched=True, num_proc=12)
+    if filter_ques_type:
+        ds = ds.filter(
+            lambda x: [i == filter_ques_type for i in x["gen_question_type"]],
+            batched=True,
+        )
+
     return ds
 
 
@@ -88,6 +102,7 @@ def load_okvqa_ds(
     train_coco_dataset_root,
     val_coco_dataset_root,
     split=None,
+    filter_ques_type: str = None,
 ):
     root_dir = Path(root_dir)
     train_ann = root_dir / "mscoco_train2014_annotations.json"
@@ -155,4 +170,9 @@ def load_okvqa_ds(
         ds = ds.map(val_trans, batched=True, with_indices=True, num_proc=12)
     ds = ds.cast_column("image", datasets.Image(decode=True))
 
+    if filter_ques_type:
+        ds = ds.filter(
+            lambda x: [i == filter_ques_type for i in x["question_type"]],
+            batched=True,
+        )
     return ds
