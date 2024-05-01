@@ -6,7 +6,7 @@ few_shot_num: 32
 split: 'train'
 max_train_size: -1
 val_ann_file: "v2_mscoco_val2014_annotations_subdata.json"
-filter_ques_type: None
+filter_ques_type: null
 
 instruction: "Instruction: provide an answer to the question. Use the image to answer.\n"
 # use for eval
