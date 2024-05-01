@@ -28,7 +28,9 @@ from icv_src.metrics import (
 @hydra.main(config_path="config", config_name="inference.yaml")
 def main(cfg: DictConfig):
     result_dir = Path(cfg.result_dir)
-    save_path: Path = result_dir / "inference" / cfg.run_name
+    save_path: Path = (
+        result_dir / "inference" / cfg.data_cfg.dataset.name / cfg.run_name
+    )
     if not save_path.exists():
         save_path.mkdir(parents=True)
     meta_info_dir = save_path / "meta_info"
