@@ -59,13 +59,11 @@ def main(cfg: DictConfig):
     else:
         raise ValueError(f"{cfg.data_cfg.dataset.name=} error")
 
-    ques_type_list = list(set(val_ds["gene_ques_type"]))
+    ques_type_list = list(set(val_ds["gen_question_type"]))
 
     ques_type_icv_dict = {}
     for ques_type in ques_type_list:
-        run_name = (
-            f"vqav2_ques-type:{ques_type}_global_icv_nonsig_alpha0.1_1wsample_32shot"
-        )
+        run_name = f"{cfg.data_cfg.dataset.name}_ques-type:{ques_type}_{cfg.run_name}"
         model_cpk_dir = result_dir / "model_cpk" / run_name
         icv_cpk = torch.load(model_cpk_dir / "icv_cpk.bin")
         icv = icv_cpk["icv_encoder.icv"].to(cfg.device)
@@ -92,6 +90,7 @@ def main(cfg: DictConfig):
         cfg.bs,
         cfg.data_cfg.dataset.instruction,
         ques_type_icv_dict,
+        cfg.test_all_mean,
     )
     preds = []
     for idx in results_dict:
@@ -117,16 +116,18 @@ def main(cfg: DictConfig):
 
 @torch.inference_mode()
 def icv_set_inference(
-    val_ds,
-    model,
-    processor,
-    bs,
-    instruction="",
-    icv_dict=None,
+    val_ds, model, processor, bs, instruction="", icv_dict=None, test_all_mean=False
 ):
     results_dict = {}
 
     index = 0
+    all_mean_icv = []
+    all_mean_alpha = []
+    for key in icv_dict:
+        all_mean_icv.append(icv_dict[key]["icv"])
+        all_mean_alpha.append(icv_dict[key]["alpha"])
+    all_mean_icv = torch.stack(all_mean_icv).mean(dim=0)
+    all_mean_alpha = torch.stack(all_mean_alpha).mean(dim=0)
 
     for batch in more_itertools.chunked(tqdm(val_ds, total=len(val_ds)), bs):
 
@@ -136,18 +137,26 @@ def icv_set_inference(
             prompts = [[] for _ in range(bs)]
         icvs = []
         alphas = []
-        for i, sample in enumerate(batch):
-            prompts[i].extend(
-                [
-                    sample["image"],
-                    f"Question:{sample['question']} Short answer:",
-                ]
-            )
-            icvs.append(icv_dict[sample["gene_ques_type"]]["icv"])
-            alphas.append(icv_dict[sample["gene_ques_type"]]["alpha"])
+        if not test_all_mean:
+            for i, sample in enumerate(batch):
+                prompts[i].extend(
+                    [
+                        sample["image"],
+                        f"Question:{sample['question']} Short answer:",
+                    ]
+                )
+                icvs.extend(
+                    [icv_dict[sample["gen_question_type"]]["icv"] for _ in range(3)]
+                )
+                alphas.extend(
+                    [icv_dict[sample["gen_question_type"]]["alpha"] for _ in range(3)]
+                )
 
-        icvs = torch.cat(icvs, dim=0)
-        alphas = torch.cat(alphas, dim=0)
+            icvs = torch.cat(icvs, dim=0)
+            alphas = torch.cat(alphas, dim=0)
+        else:
+            icvs = all_mean_icv
+            alphas = all_mean_alpha
         query_inputs = processor(prompts)
         query_inputs = {k: v.to(model.device) for k, v in query_inputs.items()}
 
@@ -161,6 +170,7 @@ def icv_set_inference(
                 length_penalty=0.0,
                 min_new_tokens=0,
             )
+
         prompt_len = int(query_inputs["attention_mask"].shape[1])
         outputs = generated_out.tolist()
 
