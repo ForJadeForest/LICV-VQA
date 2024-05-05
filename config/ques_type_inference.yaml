@@ -7,7 +7,7 @@ defaults:
 
 bs: 4
 test_num: -1
-run_name: "global_icv_nonsig_alpha0.1_1wsample_32shot"
+run_name: "global_icv_nonsig_alpha0.1_32shot_1e-3icvlr"
 test_all_mean: False
 
 result_dir: ${oc.env:RESULT_DIR}

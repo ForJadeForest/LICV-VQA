@@ -170,9 +170,17 @@ def load_okvqa_ds(
         ds = ds.map(val_trans, batched=True, with_indices=True, num_proc=12)
     ds = ds.cast_column("image", datasets.Image(decode=True))
 
+    def ques_type_gene(examples):
+        examples["gen_question_type"] = [
+            que_type for que_type in examples["question_type"]
+        ]
+        return examples
+
+    ds = ds.map(ques_type_gene, batched=True, num_proc=12)
     if filter_ques_type:
         ds = ds.filter(
             lambda x: [i == filter_ques_type for i in x["question_type"]],
             batched=True,
         )
+
     return ds
