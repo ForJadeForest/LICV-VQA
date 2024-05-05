@@ -63,8 +63,14 @@ def main(cfg: DictConfig):
 
     ques_type_icv_dict = {}
     for ques_type in ques_type_list:
-        run_name = f"{cfg.data_cfg.dataset.name}_ques-type:{ques_type}_{cfg.run_name}"
-        model_cpk_dir = result_dir / "model_cpk" / run_name
+        model_name = cfg.model_name_or_path.split("/")[-1]
+        model_cpk_dir = (
+            result_dir
+            / "model_cpk"
+            / cfg.data_cfg.dataset.name
+            / model_name
+            / cfg.run_name
+        )
         icv_cpk = torch.load(model_cpk_dir / "icv_cpk.bin")
         icv = icv_cpk["icv_encoder.icv"].to(cfg.device)
         alpha = icv_cpk["icv_encoder.alpha"].to(cfg.device)

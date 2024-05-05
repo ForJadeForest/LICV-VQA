@@ -28,8 +28,9 @@ from icv_src.metrics import (
 @hydra.main(config_path="config", config_name="inference.yaml")
 def main(cfg: DictConfig):
     result_dir = Path(cfg.result_dir)
+    model_name = cfg.model_name_or_path.split("/")[-1]
     save_path: Path = (
-        result_dir / "inference" / cfg.data_cfg.dataset.name / cfg.run_name
+        result_dir / "inference" / model_name / cfg.data_cfg.dataset.name / cfg.run_name
     )
     if not save_path.exists():
         save_path.mkdir(parents=True)
@@ -38,7 +39,13 @@ def main(cfg: DictConfig):
         meta_info_dir.mkdir()
 
     if cfg.test_icv:
-        model_cpk_dir = result_dir / "model_cpk" / cfg.run_name
+        model_cpk_dir = (
+            result_dir
+            / "model_cpk"
+            / cfg.data_cfg.dataset.name
+            / model_name
+            / cfg.run_name
+        )
         icv_cpk = torch.load(model_cpk_dir / "icv_cpk.bin")
         icv = icv_cpk["icv_encoder.icv"].to(cfg.device)
         alpha = icv_cpk["icv_encoder.alpha"].to(cfg.device)
