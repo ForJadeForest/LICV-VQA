@@ -32,7 +32,9 @@ class VQAICVDataModule(pl.LightningDataModule):
                 max_train_size=self.data_cfg.dataset.max_train_size,
                 split="train",
                 val_ann_file=getattr(self.data_cfg.dataset, "val_ann_file", None),
-                filter_ques_type=self.data_cfg.dataset.filter_ques_type,
+                #filter_ques_type=self.data_cfg.dataset.filter_ques_type,
+                retriver=self.data_cfg.dataset.retriver,
+                faiss_directory=self.data_cfg.dataset.faiss_directory,
             )
 
     def train_dataloader(self):
@@ -50,7 +52,7 @@ def collator_data(data_list, processor):
     query_prompt = data_dict["query_prompt"]
     ice_prompt = data_dict["ice_prompt"]
     query_x = data_dict["query_x"]
-
+    
     query_input = processor(
         query_prompt, return_tensors="pt", padding=True, truncation=True
     )
