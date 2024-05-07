@@ -69,11 +69,12 @@ def main(cfg: DictConfig):
             / "model_cpk"
             / cfg.data_cfg.dataset.name
             / model_name
-            / cfg.run_name
+            / (f"ques_type:{ques_type}_" + cfg.run_name)
         )
         icv_cpk = torch.load(model_cpk_dir / "icv_cpk.bin")
         icv = icv_cpk["icv_encoder.icv"].to(cfg.device)
         alpha = icv_cpk["icv_encoder.alpha"].to(cfg.device)
+        print(icv_cpk.get("use_sigmoid", None), alpha)
         if icv_cpk.get("use_sigmoid", None):
             alpha = torch.sigmoid(alpha)
         ques_type_icv_dict[ques_type] = {"icv": icv, "alpha": alpha}
@@ -114,7 +115,7 @@ def main(cfg: DictConfig):
     acc = compute_vqa_accuracy(preds, val_ques_path, val_ann_path)
 
     result_dict[base_info + "icv result"] = acc
-    with open(save_path / "result.json", "w") as f:
+    with open(save_path / "query_type_result.json", "w") as f:
         json.dump(result_dict, f, indent=4)
     with open(save_path / "meta_info" / f"icv.json", "w") as f:
         json.dump(results_dict, f, indent=4)
