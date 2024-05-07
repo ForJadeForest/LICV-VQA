@@ -4,7 +4,7 @@ train_coco_dataset_root: ${oc.env:COCO_PATH}/mscoco2014/train2014
 val_coco_dataset_root: ${oc.env:COCO_PATH}/mscoco2014/val2014
 few_shot_num: 32
 split: 'train'
-max_train_size: -1
+max_train_size: 6000
 val_ann_file: "v2_mscoco_val2014_annotations_subdata.json"
 filter_ques_type: null
 select_from_query: True
