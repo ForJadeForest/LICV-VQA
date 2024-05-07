@@ -13,7 +13,7 @@ class VQAICVDataModule(pl.LightningDataModule):
         processor,
     ) -> None:
         super().__init__()
-        self.save_hyperparameters()
+        self.save_hyperparameters(ignore="processor")
 
         self.processor = processor
 
