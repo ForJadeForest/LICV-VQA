@@ -7,8 +7,8 @@ defaults:
 seed: 426
 
 run_name: "debug"
-
-model_name_or_path: "${oc.env:MODEL_CPK_DIR}/idefics-9b"
+model_cpk_dir: ${oc.env:MODEL_CPK_DIR}
+model_name: "idefics-9b"
 # model_name: "HuggingFaceM4/tiny-random-idefics"
 
 result_dir: ${oc.env:RESULT_DIR}

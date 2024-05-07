@@ -33,7 +33,7 @@ def main(cfg: DictConfig):
     if not os.path.exists(cfg.result_dir):
         os.makedirs(cfg.result_dir)
 
-    model_name = cfg.model_name_or_path.split("/")[-1]
+    model_name = cfg.model_name.split("/")[-1]
     save_path = os.path.join(
         cfg.result_dir,
         "model_cpk",
@@ -63,13 +63,14 @@ def main(cfg: DictConfig):
             LearningRateMonitor(),
             RichModelSummary(max_depth=2),
             RichProgressBar(),
-            model_cpk_callback,
+            # model_cpk_callback,
         ],
         **cfg.trainer,
     )
+    model_path = Path(cfg.model_cpk_dir) / cfg.model_name
 
-    model = ICVIdeficsForVisionText2Text.from_pretrained(cfg.model_name_or_path)
-    processor = IdeficsProcessor.from_pretrained(cfg.model_name_or_path)
+    model = ICVIdeficsForVisionText2Text.from_pretrained(model_path)
+    processor = IdeficsProcessor.from_pretrained(model_path)
     processor.tokenizer.padding_side = "right"
 
     model = VQAICVModule(
@@ -82,6 +83,13 @@ def main(cfg: DictConfig):
     trainer.fit(
         model,
         data_module,
+    )
+    trainer.save_checkpoint(
+        filepath=os.path.join(
+            save_path,
+            "last.ckpt",
+        ),
+        weights_only=True,
     )
     postprocess(cfg, save_path)
 
