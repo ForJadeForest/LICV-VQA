@@ -33,6 +33,7 @@ class VQAICVDataModule(pl.LightningDataModule):
                 split="train",
                 val_ann_file=getattr(self.data_cfg.dataset, "val_ann_file", None),
                 filter_ques_type=self.data_cfg.dataset.filter_ques_type,
+                select_from_query=self.data_cfg.dataset.select_from_query,
             )
 
     def train_dataloader(self):
