@@ -1,4 +1,5 @@
 from torch.utils.data import Dataset
+from loguru import logger
 import numpy as np
 from .load_ds_utils import load_okvqa_ds, load_vqav2_ds
 
@@ -40,6 +41,9 @@ class VQAV2Dataset(Dataset):
                 lambda x: [i == filter_ques_type for i in x["gen_question_type"]],
                 batched=True,
             )
+            logger.info(
+                f"After Filter Question Type Query dataset size: {len(self.query_ds)}"
+            )
 
         if max_train_size > 0 and len(self.query_ds) > max_train_size:
             random_select_idx = np.random.choice(
@@ -52,6 +56,9 @@ class VQAV2Dataset(Dataset):
             self.select_ds = ds
         self.few_shot_num = few_shot_num
         self.instruction = instruction
+        logger.info(
+            f"Query dataset size: {len(self.query_ds)}, Select dataset size: {len(self.select_ds)}"
+        )
 
     def __len__(self):
         return len(self.query_ds)
