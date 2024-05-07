@@ -34,7 +34,7 @@ class VQAV2Dataset(Dataset):
                 val_coco_dataset_root,
                 split=split,
             )
-        self.query_ds = ds.map()
+        self.query_ds = ds
         if filter_ques_type:
             self.query_ds = ds.filter(
                 lambda x: [i == filter_ques_type for i in x["gen_question_type"]],
@@ -47,9 +47,9 @@ class VQAV2Dataset(Dataset):
             )
             self.query_ds = self.query_ds.select(random_select_idx)
         if select_from_query:
-            self.select_ds = self.query_ds.map()
+            self.select_ds = self.query_ds
         else:
-            self.select_ds = ds.map()
+            self.select_ds = ds
         self.few_shot_num = few_shot_num
         self.instruction = instruction
 
