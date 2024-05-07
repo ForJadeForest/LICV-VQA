@@ -33,6 +33,14 @@ def main(cfg: DictConfig):
     if not os.path.exists(cfg.result_dir):
         os.makedirs(cfg.result_dir)
 
+    model_name = cfg.model_name.split("/")[-1]
+    save_path = os.path.join(
+        cfg.result_dir,
+        "model_cpk",
+        cfg.data_cfg.dataset.name,
+        model_name,
+        cfg.run_name,
+    )
     logger = WandbLogger(
         save_dir=cfg.result_dir,
         name=cfg.run_name,
@@ -47,7 +55,7 @@ def main(cfg: DictConfig):
         save_top_k=0,
         mode="min",
         save_weights_only=True,
-        dirpath=os.path.join(cfg.result_dir, "model_cpk", cfg.run_name),
+        dirpath=save_path,
     )
     trainer = pl.Trainer(
         logger=logger,
@@ -55,13 +63,14 @@ def main(cfg: DictConfig):
             LearningRateMonitor(),
             RichModelSummary(max_depth=2),
             RichProgressBar(),
-            model_cpk_callback,
+            # model_cpk_callback,
         ],
         **cfg.trainer,
     )
+    model_path = Path(cfg.model_cpk_dir) / cfg.model_name
 
-    model = ICVIdeficsForVisionText2Text.from_pretrained(cfg.model_name_or_path)
-    processor = IdeficsProcessor.from_pretrained(cfg.model_name_or_path)
+    model = ICVIdeficsForVisionText2Text.from_pretrained(model_path)
+    processor = IdeficsProcessor.from_pretrained(model_path)
     processor.tokenizer.padding_side = "right"
 
     model = VQAICVModule(
@@ -75,13 +84,19 @@ def main(cfg: DictConfig):
         model,
         data_module,
     )
-    postprocess(cfg)
+    trainer.save_checkpoint(
+        filepath=os.path.join(
+            save_path,
+            "last.ckpt",
+        ),
+        weights_only=True,
+    )
+    postprocess(cfg, save_path)
 
 
 @rank_zero_only
-def postprocess(cfg):
-    save_path = Path(os.path.join(cfg.result_dir, "model_cpk", cfg.run_name))
-
+def postprocess(cfg, save_path):
+    save_path = Path(save_path)
     if "deepspeed" in cfg.trainer.strategy:
         cpk_save_path = save_path / "last.ckpt"
         output_file = save_path / "lightning_module.bin"

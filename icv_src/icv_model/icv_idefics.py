@@ -1,6 +1,6 @@
 """ PyTorch Idefics model."""
 
-from typing import List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import torch
 import torch.utils.checkpoint
@@ -10,6 +10,7 @@ from transformers.activations import ACT2FN
 from transformers.modeling_attn_mask_utils import (
     _prepare_4d_causal_attention_mask_for_sdpa,
 )
+from transformers.modeling_outputs import ModelOutput
 from transformers.models.idefics.configuration_idefics import IdeficsConfig
 from transformers.models.idefics.modeling_idefics import (
     LLAMA_INPUTS_DOCSTRING,
@@ -25,7 +26,6 @@ from transformers.models.idefics.modeling_idefics import (
     expand_inputs_for_generation,
     freeze_model,
     prepare_inputs_for_generation,
-    update_model_kwargs_for_generation,
 )
 from transformers.models.idefics.perceiver import IdeficsPerceiverResampler
 from transformers.models.idefics.vision import IdeficsVisionTransformer
@@ -554,18 +554,27 @@ class ICVIdeficsForVisionText2Text(IdeficsPreTrainedModel):
         Example:
 
         ```python
-        >>> from transformers import AutoTokenizer, IdeficsForVisionText2Text
+        >>> from transformers import AutoProcessor, IdeficsForVisionText2Text
 
         >>> model = IdeficsForVisionText2Text.from_pretrained("HuggingFaceM4/idefics-9b")
-        >>> tokenizer = AutoTokenizer.from_pretrained("HuggingFaceM4/idefics-9b")
+        >>> processor = AutoProcessor.from_pretrained("HuggingFaceM4/idefics-9b")
 
-        >>> prompt = "Hey, are you consciours? Can you talk to me?"
-        >>> inputs = tokenizer(prompt, return_tensors="pt")
+        >>> dogs_image_url_1 = "https://huggingface.co/datasets/hf-internal-testing/fixtures_nlvr2/raw/main/image1.jpeg"
+        >>> dogs_image_url_2 = "https://huggingface.co/datasets/hf-internal-testing/fixtures_nlvr2/raw/main/image2.jpeg"
 
-        >>> # Generate
-        >>> generate_ids = model.generate(inputs.input_ids, max_length=30)
-        >>> tokenizer.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
-        "Hey, are you consciours? Can you talk to me?\nI'm not consciours, but I can talk to you."
+        >>> prompts = [
+        ...     [
+        ...         "User:",
+        ...         dogs_image_url_1,
+        ...         "Describe this image.\nAssistant: An image of two dogs.\n",
+        ...         "User:",
+        ...         dogs_image_url_2,
+        ...         "Describe this image.\nAssistant:",
+        ...     ]
+        ... ]
+        >>> inputs = processor(prompts, return_tensors="pt")
+        >>> generate_ids = model.generate(**inputs, max_new_tokens=6)
+        >>> processor.batch_decode(generate_ids, skip_special_tokens=True)
         ```"""
 
         output_attentions = (
@@ -661,9 +670,28 @@ class ICVIdeficsForVisionText2Text(IdeficsPreTrainedModel):
     ):
         return expand_inputs_for_generation(*args, **model_kwargs)
 
-    @staticmethod
-    def _update_model_kwargs_for_generation(outputs, model_kwargs, is_encoder_decoder):
-        return update_model_kwargs_for_generation(outputs, model_kwargs)
+    def _update_model_kwargs_for_generation(
+        self,
+        outputs: ModelOutput,
+        model_kwargs: Dict[str, Any],
+        is_encoder_decoder: bool = False,
+        standardize_cache_format: bool = False,
+    ) -> Dict[str, Any]:
+        model_kwargs = super()._update_model_kwargs_for_generation(
+            outputs,
+            model_kwargs,
+            is_encoder_decoder,
+            standardize_cache_format,
+        )
+
+        if "image_attention_mask" in model_kwargs:
+            image_attention_mask = model_kwargs["image_attention_mask"]
+            last_mask = image_attention_mask[:, -1, :].unsqueeze(1)
+            model_kwargs["image_attention_mask"] = last_mask
+
+        # Get the precomputed image_hidden_states
+        model_kwargs["image_hidden_states"] = outputs.image_hidden_states
+        return model_kwargs
 
     @staticmethod
     def _reorder_cache(past, beam_idx):
