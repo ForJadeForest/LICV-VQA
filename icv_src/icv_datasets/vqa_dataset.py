@@ -25,7 +25,7 @@ class VQAV2Dataset(Dataset):
                 val_coco_dataset_root,
                 split=split,
                 val_ann_file=val_ann_file,
-                filter_ques_type=filter_ques_type,
+                # filter_ques_type=filter_ques_type,
             )
         elif name == "okvqa":
             self.ds = load_okvqa_ds(
@@ -33,21 +33,31 @@ class VQAV2Dataset(Dataset):
                 train_coco_dataset_root,
                 val_coco_dataset_root,
                 split=split,
-                filter_ques_type=filter_ques_type,
+                # filter_ques_type=filter_ques_type,
             )
-        if max_train_size > 0 and len(self.ds) > max_train_size:
-            random_select_idx = np.random.randint(0, len(self.ds), size=max_train_size)
-            self.ds = self.ds.select(random_select_idx)
+        self.query_ds = self.ds
+        if filter_ques_type:
+            self.query_ds = self.ds.filter(
+                lambda x: [i == filter_ques_type for i in x["question_type"]],
+                batched=True,
+            )
+
+        if max_train_size > 0 and len(self.query_ds) > max_train_size:
+            random_select_idx = np.random.randint(
+                0, len(self.query_ds), size=max_train_size
+            )
+            self.query_ds = self.query_ds.select(random_select_idx)
+
         self.few_shot_num = few_shot_num
         self.instruction = instruction
 
     def __len__(self):
-        return len(self.ds)
+        return len(self.query_ds)
 
     def __getitem__(self, index):
-        query_item = self.ds[index]
+        query_item = self.query_ds[index]
         few_shot_index = np.random.randint(0, len(self.ds), size=self.few_shot_num)
-        while index in few_shot_index:
+        while query_item["idx"] in few_shot_index:
             few_shot_index = np.random.randint(0, len(self.ds), size=self.few_shot_num)
         few_shot_index = few_shot_index.tolist()
         in_context_example = [self.ds[idx] for idx in few_shot_index]
