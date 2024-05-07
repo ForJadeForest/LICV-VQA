@@ -63,7 +63,7 @@ def main(cfg: DictConfig):
             LearningRateMonitor(),
             RichModelSummary(max_depth=2),
             RichProgressBar(),
-            model_cpk_callback,
+            # model_cpk_callback,
         ],
         **cfg.trainer,
     )
@@ -82,6 +82,13 @@ def main(cfg: DictConfig):
     trainer.fit(
         model,
         data_module,
+    )
+    trainer.save_checkpoint(
+        filepath=os.path.join(
+            save_path,
+            "last.ckpt",
+        ),
+        weights_only=True,
     )
     postprocess(cfg, save_path)
 
