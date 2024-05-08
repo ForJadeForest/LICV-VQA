@@ -5,6 +5,7 @@ from pathlib import Path
 import hydra
 import pytorch_lightning as pl
 import torch
+from loguru import logger
 from dotenv import load_dotenv
 from omegaconf import DictConfig
 from pytorch_lightning.callbacks import (
@@ -29,6 +30,7 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 @hydra.main(config_path="config", config_name="train.yaml")
 def main(cfg: DictConfig):
+    global logger
     pl.seed_everything(cfg.seed)
     if not os.path.exists(cfg.result_dir):
         os.makedirs(cfg.result_dir)
@@ -41,13 +43,17 @@ def main(cfg: DictConfig):
         model_name,
         cfg.run_name,
     )
-    logger = WandbLogger(
+    save_path = Path(save_path)
+    if (save_path / "icv_cpk.bin").exists():
+        logger.info(f"{str(save_path / 'icv_cpk.bin')} exists! exit...")
+        return
+    wb_logger = WandbLogger(
         save_dir=cfg.result_dir,
         name=cfg.run_name,
         project="VQAInContextVector",
         log_model=False,
     )
-    logger.log_hyperparams(cfg)
+    wb_logger.log_hyperparams(dict(cfg))
     model_cpk_callback = ModelCheckpoint(
         filename="min_tl-{epoch}-{loss:.5f}",
         monitor="loss",
@@ -58,7 +64,7 @@ def main(cfg: DictConfig):
         dirpath=save_path,
     )
     trainer = pl.Trainer(
-        logger=logger,
+        logger=wb_logger,
         callbacks=[
             LearningRateMonitor(),
             RichModelSummary(max_depth=2),
