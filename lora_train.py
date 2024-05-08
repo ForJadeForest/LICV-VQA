@@ -67,7 +67,11 @@ class VQADataset(nn.Module):
             item["image"],
             f"Question:{item['question']} Short answer:{item['answer']}",
         ]
-        return {"prompt": query_prompt}
+        return {
+            "prompt": query_prompt,
+            "prompt_x": f"Question:{item['question']} Short answer:",
+            "prompt_y": f"{item['answer']}",
+        }
 
 
 class FTVQADataModule(pl.LightningDataModule):
@@ -99,8 +103,14 @@ def collator_data(data_list, processor):
     sample = data_list[0]
     data_dict = {k: [d[k] for d in data_list] for k in sample.keys()}
     prompt = data_dict["prompt"]
+    query_x = processor(
+        data_dict["query_x"], return_tensors="pt", padding=True, truncation=True
+    )
+    query_x_length = (query_x["input_ids"] != processor.tokenizer.pad_token_id).sum(
+        dim=1
+    )
     inputs = processor(prompt, return_tensors="pt", padding=True, truncation=True)
-    return {"inputs": inputs}
+    return {"inputs": inputs, "query_x_length": query_x_length}
 
 
 class FTVQAModule(pl.LightningModule):
@@ -113,7 +123,15 @@ class FTVQAModule(pl.LightningModule):
         self.module_cfg = module_cfg
 
     def training_step(self, batch, batch_idx):
-        labels = batch["inputs"]["input_ids"]
+        if self.module_cfg.only_ans_loss:
+            query_mask = self.get_mask(batch["inputs"], batch["query_x_length"])
+            labels = torch.full_like(
+                batch["inputs"], device=batch["inputs"].device, fill_value=-100
+            )
+            labels[query_mask] = batch["inputs"]["input_ids"][query_mask]
+        else:
+            labels = batch["inputs"]["input_ids"]
+
         output = self.model(**batch["inputs"], labels=labels)
         self.log("loss", output["loss"])
         return output["loss"]
@@ -148,6 +166,17 @@ class FTVQAModule(pl.LightningModule):
             "optimizer": optimizer,
             "lr_scheduler": {"scheduler": scheduler, "interval": "step"},
         }
+
+    def get_mask(self, inputs, mask_length):
+        mask_shape = inputs["input_ids"].shape
+        bs, seq_len = mask_shape
+        device = inputs["input_ids"].device
+        sequence_indices = (
+            torch.arange(seq_len, device=device).unsqueeze(0).expand(bs, -1)
+        )
+        mask = sequence_indices >= mask_length.unsqueeze(dim=1)
+        mask[inputs.input_ids == self.processor.tokenizer.pad_token_id] = False
+        return mask
 
 
 @hydra.main(config_path="config", config_name="lora_train.yaml")
