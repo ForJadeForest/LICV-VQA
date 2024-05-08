@@ -140,7 +140,7 @@ class FTVQAModule(pl.LightningModule):
         if "deepspeed" in self.module_cfg.strategy:
             optimizer = DeepSpeedCPUAdam(
                 filter(lambda x: x.requires_grad, self.parameters()),
-                lr=self.module_cfg.icv_lr,
+                lr=self.module_cfg.lr,
                 weight_decay=self.module_cfg.weight_decay,
             )
         else:
@@ -246,7 +246,7 @@ def main(cfg: DictConfig):
     module = FTVQAModule(
         model=model,
         processor=processor,
-        module_cfg=cfg.icv_module,
+        module_cfg=cfg.module_cfg,
     )
     data_module = FTVQADataModule(data_cfg=cfg.data_cfg, processor=processor)
 

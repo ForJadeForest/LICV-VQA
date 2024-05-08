@@ -1,8 +1,16 @@
 defaults:
   - _self_
   - data_cfg: icv_data
-  - icv_module: icv_module
   - trainer: zero2
+
+
+module_cfg: 
+  only_ans_loss: True
+  strategy: ${trainer.strategy}
+  lr: 1e-3
+  weight_decay: 1e-3
+  warm_steps: 0.1
+
 
 seed: 426
 
