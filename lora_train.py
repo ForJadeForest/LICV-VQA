@@ -67,10 +67,13 @@ class VQADataset(nn.Module):
             item["image"],
             f"Question:{item['question']} Short answer:{item['answer']}",
         ]
+        prompt_x = [
+            item["image"],
+            f"Question:{item['question']} Short answer:",
+        ]
         return {
             "prompt": query_prompt,
-            "prompt_x": f"Question:{item['question']} Short answer:",
-            "prompt_y": f"{item['answer']}",
+            "prompt_x": prompt_x,
         }
 
 
@@ -135,7 +138,7 @@ class FTVQAModule(pl.LightningModule):
             labels = batch["inputs"]["input_ids"]
 
         output = self.model(**batch["inputs"], labels=labels)
-        self.log("loss", output["loss"])
+        self.log("loss", output["loss"], prog_bar=True)
         return output["loss"]
 
     def configure_optimizers(self):
