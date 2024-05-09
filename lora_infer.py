@@ -40,7 +40,7 @@ def main(cfg: DictConfig):
         result_dir / "model_cpk" / cfg.data_cfg.dataset.name / model_name / cfg.run_name
     )
     save_path: Path = (
-        result_dir / "inference" / cfg.data_cfg.dataset.name / model_name / cfg.run_name
+        result_dir / "inference" / model_name / cfg.data_cfg.dataset.name / cfg.run_name
     )
     if not save_path.exists():
         save_path.mkdir(parents=True)
@@ -50,8 +50,9 @@ def main(cfg: DictConfig):
     base_info = f"{str(datetime.datetime.now())}-{cfg.test_num=}-"
     cpk_path = load_model_cpk / "last.ckpt"
 
-    output_file = save_path / "lightning_module.bin"
-    convert_zero_checkpoint_to_fp32_state_dict(cpk_path, output_file)
+    output_file = load_model_cpk / "lightning_module.bin"
+    if not output_file.exists():
+        convert_zero_checkpoint_to_fp32_state_dict(cpk_path, output_file)
 
     model = ICVIdeficsForVisionText2Text.from_pretrained(cfg.model_name_or_path)
     processor = IdeficsProcessor.from_pretrained(cfg.model_name_or_path)

@@ -104,7 +104,7 @@ def collator_data(data_list, processor):
     data_dict = {k: [d[k] for d in data_list] for k in sample.keys()}
     prompt = data_dict["prompt"]
     query_x = processor(
-        data_dict["query_x"], return_tensors="pt", padding=True, truncation=True
+        data_dict["prompt_x"], return_tensors="pt", padding=True, truncation=True
     )
     query_x_length = (query_x["input_ids"] != processor.tokenizer.pad_token_id).sum(
         dim=1
@@ -126,7 +126,9 @@ class FTVQAModule(pl.LightningModule):
         if self.module_cfg.only_ans_loss:
             query_mask = self.get_mask(batch["inputs"], batch["query_x_length"])
             labels = torch.full_like(
-                batch["inputs"], device=batch["inputs"].device, fill_value=-100
+                batch["inputs"]["input_ids"],
+                device=batch["inputs"]["input_ids"].device,
+                fill_value=-100,
             )
             labels[query_mask] = batch["inputs"]["input_ids"][query_mask]
         else:
