@@ -1,27 +1,18 @@
 defaults:
   - _self_
   - data_cfg: icv_data
-  - trainer: zero2
 
-
-module_cfg: 
-  only_ans_loss: True
-  strategy: ${trainer.strategy}
-  lr: 1e-3
-  weight_decay: 1e-3
-  warm_steps: 0.1
 
 lora_qkv: False
+bs: 4
+test_num: -1
+few_shot_list: [1, 2, 4, 8, 16, 32]
 
-seed: 426
-
-run_name: "debug"
+run_name: debug
+result_dir: ${oc.env:RESULT_DIR}
+device: 'cuda'
 
 model_name_or_path: "${oc.env:MODEL_CPK_DIR}/idefics-9b"
-# model_name: "HuggingFaceM4/tiny-random-idefics"
-
-result_dir: ${oc.env:RESULT_DIR}
-
 
 hydra:
   run:
