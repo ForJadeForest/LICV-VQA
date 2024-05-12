@@ -10,6 +10,7 @@ import pandas as pd
 import torch
 from dotenv import load_dotenv
 import more_itertools
+from loguru import logger
 from omegaconf import DictConfig
 from PIL import Image
 
@@ -51,7 +52,7 @@ def main(cfg: DictConfig):
         alpha = icv_cpk["icv_encoder.alpha"].to(cfg.device)
         if icv_cpk.get("use_sigmoid", None):
             alpha = torch.sigmoid(alpha)
-        print("ICV loaded")
+        logger.info("ICV loaded")
     else:
         icv = None
         alpha = None
@@ -119,7 +120,7 @@ def main(cfg: DictConfig):
         val_ques_path = cfg.data_cfg.dataset.val_ques_path
         val_ann_path = cfg.data_cfg.dataset.val_ann_path
         acc = compute_vqa_accuracy(preds, val_ques_path, val_ann_path)
-
+        logger.info(f"{cfg.run_name} ACC: {acc['overall']}")
         result_dict[base_info + "icv result"] = acc
         with open(save_path / "result.json", "w") as f:
             json.dump(result_dict, f, indent=4)

@@ -72,6 +72,7 @@ def main(cfg: DictConfig):
             # model_cpk_callback,
         ],
         **cfg.trainer,
+        enable_checkpointing=False,
     )
     model_path = Path(cfg.model_cpk_dir) / cfg.model_name
 

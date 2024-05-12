@@ -2,6 +2,7 @@ defaults:
   - icv_encoder: global_icv_encoder
 
 hard_loss_weight: 0.
+only_hard_loss: False
 
 init_temperature: 1.
 decay_ratio: -1
