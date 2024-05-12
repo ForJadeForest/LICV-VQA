@@ -144,7 +144,7 @@ def main(cfg: DictConfig):
     val_ann_path = cfg.data_cfg.dataset.val_ann_path
     acc = compute_vqa_accuracy(preds, val_ques_path, val_ann_path)
     result_dict[base_info + f"result"] = acc
-
+    logger.info(f"{cfg.run_name} ACC: {acc['overall']}")
     with open(save_path / "result.json", "w") as f:
         json.dump(result_dict, f, indent=4)
     with open(save_path / "meta_info" / f"lora_inference.json", "w") as f:
