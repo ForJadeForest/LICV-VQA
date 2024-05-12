@@ -246,6 +246,7 @@ def main(cfg: DictConfig):
         new_lora_B = nn.Linear(32, 32002, bias=False)
         nn.init.constant_(new_lora_B.weight, 0)
         model.lm_head.lora_B["default"] = new_lora_B
+    model.print_trainable_parameters()
     module = FTVQAModule(
         model=model,
         processor=processor,
