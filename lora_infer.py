@@ -2,35 +2,36 @@ import datetime
 import json
 import os
 import random
+import shutil
 import uuid
 from pathlib import Path
-import numpy as np
+
 import hydra
+import more_itertools
+import numpy as np
 import pandas as pd
 import torch
 from dotenv import load_dotenv
-import more_itertools
-from torch import nn
 from omegaconf import DictConfig
 from PIL import Image
-
+from pytorch_lightning.utilities.deepspeed import (
+    convert_zero_checkpoint_to_fp32_state_dict,
+)
+from torch import nn
 from tqdm import tqdm
 from transformers import IdeficsProcessor
 
-from icv_src.icv_datasets.vqa_dataset import load_vqav2_ds, load_okvqa_ds
+from icv_src.icv_datasets.vqa_dataset import load_okvqa_ds, load_vqav2_ds
 from icv_src.icv_model.icv_idefics import ICVIdeficsForVisionText2Text
 from icv_src.metrics import (
     compute_vqa_accuracy,
-    postprocess_vqa_generation,
     postprocess_ok_vqa_generation,
-)
-from pytorch_lightning.utilities.deepspeed import (
-    convert_zero_checkpoint_to_fp32_state_dict,
+    postprocess_vqa_generation,
 )
 from lora_train import FTVQAModule
 
 
-@hydra.main(config_path="config", config_name="inference.yaml")
+@hydra.main(config_path="config", config_name="lora_inference.yaml")
 def main(cfg: DictConfig):
     from peft import LoraConfig, get_peft_model
 
@@ -57,24 +58,33 @@ def main(cfg: DictConfig):
     model = ICVIdeficsForVisionText2Text.from_pretrained(cfg.model_name_or_path)
     processor = IdeficsProcessor.from_pretrained(cfg.model_name_or_path)
 
+    if cfg.lora_qkv:
+        target_modules = ["q_proj", "v_proj", "k_proj"]
+    else:
+        target_modules = ["lm_head"]
+
     config = LoraConfig(
         r=32,
-        lora_alpha=32,
-        target_modules=["lm_head"],
+        lora_alpha=8,
+        target_modules=target_modules,
         lora_dropout=0.05,
         bias="none",
     )
     # get the peft model
     model = get_peft_model(model, config)
-    new_lora_B = nn.Linear(32, 32002, bias=False)
-    nn.init.constant_(new_lora_B.weight, 0)
-    model.lm_head.lora_B["default"] = new_lora_B
+    if not cfg.lora_qkv:
+        new_lora_B = nn.Linear(32, 32002, bias=False)
+        nn.init.constant_(new_lora_B.weight, 0)
+        model.lm_head.lora_B["default"] = new_lora_B
     module = FTVQAModule.load_from_checkpoint(
         output_file,
         model=model,
         processor=processor,
         map_location="cpu",
     )
+
+    os.remove(output_file)
+
     model = module.model
     model = model.to("cuda", torch.bfloat16)
     if cfg.data_cfg.dataset.name == "vqav2":

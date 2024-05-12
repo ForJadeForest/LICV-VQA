@@ -67,10 +67,13 @@ class VQADataset(nn.Module):
             item["image"],
             f"Question:{item['question']} Short answer:{item['answer']}",
         ]
+        prompt_x = [
+            item["image"],
+            f"Question:{item['question']} Short answer:",
+        ]
         return {
             "prompt": query_prompt,
-            "prompt_x": f"Question:{item['question']} Short answer:",
-            "prompt_y": f"{item['answer']}",
+            "prompt_x": prompt_x,
         }
 
 
@@ -109,7 +112,9 @@ def collator_data(data_list, processor):
     query_x_length = (query_x["input_ids"] != processor.tokenizer.pad_token_id).sum(
         dim=1
     )
-    inputs = processor(prompt, return_tensors="pt", padding=True, truncation=True)
+    inputs = processor(
+        prompt, return_tensors="pt", padding=True, truncation=True, add_eos_token=True
+    )
     return {"inputs": inputs, "query_x_length": query_x_length}
 
 
@@ -135,7 +140,7 @@ class FTVQAModule(pl.LightningModule):
             labels = batch["inputs"]["input_ids"]
 
         output = self.model(**batch["inputs"], labels=labels)
-        self.log("loss", output["loss"])
+        self.log("loss", output["loss"], prog_bar=True)
         return output["loss"]
 
     def configure_optimizers(self):
@@ -202,22 +207,6 @@ def main(cfg: DictConfig):
         log_model=False,
     )
     logger.log_hyperparams(cfg)
-    model_cpk_callback = ModelCheckpoint(
-        filename="min_tl-{epoch}-{loss:.5f}",
-        monitor="loss",
-        save_last=True,
-        save_top_k=0,
-        mode="min",
-        save_weights_only=True,
-        dirpath=save_path,
-    )
-    config = LoraConfig(
-        r=32,
-        lora_alpha=32,
-        target_modules=["lm_head"],
-        lora_dropout=0.05,
-        bias="none",
-    )
 
     trainer = pl.Trainer(
         logger=logger,
@@ -225,26 +214,32 @@ def main(cfg: DictConfig):
             LearningRateMonitor(),
             RichModelSummary(max_depth=2),
             RichProgressBar(),
-            # model_cpk_callback,
         ],
+        enable_checkpointing=False,
         **cfg.trainer,
     )
 
     model = ICVIdeficsForVisionText2Text.from_pretrained(cfg.model_name_or_path)
     processor = IdeficsProcessor.from_pretrained(cfg.model_name_or_path)
     processor.tokenizer.padding_side = "right"
+    if cfg.lora_qkv:
+        target_modules = ["q_proj", "v_proj", "k_proj"]
+    else:
+        target_modules = ["lm_head"]
+
     config = LoraConfig(
         r=32,
-        lora_alpha=32,
-        target_modules=["lm_head"],
+        lora_alpha=8,
+        target_modules=target_modules,
         lora_dropout=0.05,
         bias="none",
     )
     # get the peft model
     model = get_peft_model(model, config)
-    new_lora_B = nn.Linear(32, 32002, bias=False)
-    nn.init.constant_(new_lora_B.weight, 0)
-    model.lm_head.lora_B["default"] = new_lora_B
+    if not cfg.lora_qkv:
+        new_lora_B = nn.Linear(32, 32002, bias=False)
+        nn.init.constant_(new_lora_B.weight, 0)
+        model.lm_head.lora_B["default"] = new_lora_B
     module = FTVQAModule(
         model=model,
         processor=processor,
@@ -266,5 +261,5 @@ def main(cfg: DictConfig):
 
 
 if __name__ == "__main__":
-    load_dotenv()
+    load_dotenv(override=True)
     main()
