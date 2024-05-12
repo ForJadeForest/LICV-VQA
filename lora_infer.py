@@ -17,6 +17,7 @@ from PIL import Image
 from pytorch_lightning.utilities.deepspeed import (
     convert_zero_checkpoint_to_fp32_state_dict,
 )
+from loguru import logger
 from torch import nn
 from tqdm import tqdm
 from transformers import IdeficsProcessor
@@ -43,6 +44,10 @@ def main(cfg: DictConfig):
     save_path: Path = (
         result_dir / "inference" / model_name / cfg.data_cfg.dataset.name / cfg.run_name
     )
+    if (save_path / "result.json").exists():
+        logger.info("Metrics File exsits, EXIT...")
+        return
+
     if not save_path.exists():
         save_path.mkdir(parents=True)
     meta_info_dir = save_path / "meta_info"

@@ -193,23 +193,29 @@ def main(cfg: DictConfig):
         os.makedirs(cfg.result_dir)
 
     model_name = cfg.model_name_or_path.split("/")[-1]
-    save_path = os.path.join(
-        cfg.result_dir,
-        "model_cpk",
-        cfg.data_cfg.dataset.name,
-        model_name,
-        cfg.run_name,
+    save_path = Path(
+        os.path.join(
+            cfg.result_dir,
+            "model_cpk",
+            cfg.data_cfg.dataset.name,
+            model_name,
+            cfg.run_name,
+        )
     )
-    logger = WandbLogger(
+    cpk_path = save_path / "last.ckpt"
+    if cpk_path.exists():
+        logger.info(f"The Checkpoint of {cfg.run_name} exists, EXIT....")
+        return
+    wb_logger = WandbLogger(
         save_dir=cfg.result_dir,
         name=cfg.run_name,
         project="VQAInContextVector",
         log_model=False,
     )
-    logger.log_hyperparams(cfg)
+    wb_logger.log_hyperparams(cfg)
 
     trainer = pl.Trainer(
-        logger=logger,
+        logger=wb_logger,
         callbacks=[
             LearningRateMonitor(),
             RichModelSummary(max_depth=2),
@@ -252,10 +258,7 @@ def main(cfg: DictConfig):
         data_module,
     )
     trainer.save_checkpoint(
-        filepath=os.path.join(
-            save_path,
-            "last.ckpt",
-        ),
+        filepath=cpk_path,
         weights_only=True,
     )
 
