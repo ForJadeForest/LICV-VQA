@@ -86,6 +86,8 @@ class VQAICVModule(pl.LightningModule):
             alpha=icv_encoder_output.alpha,
             labels=labels,
         )
+        if self.module_cfg.only_hard_loss:
+            return {"loss": icv_outputs["loss"]}, icv_encoder_output
         icv_logits = icv_outputs["logits"]
         with torch.no_grad():
             ice_logits = self.model(**inputs)["logits"]
