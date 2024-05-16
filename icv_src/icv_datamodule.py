@@ -53,7 +53,11 @@ def collator_data(data_list, processor):
     query_x = data_dict["query_x"]
 
     query_input = processor(
-        query_prompt, return_tensors="pt", padding=True, truncation=True
+        query_prompt,
+        return_tensors="pt",
+        padding=True,
+        truncation=True,
+        add_eos_token=True,
     )
     query_x = processor(query_x, return_tensors="pt", padding=True, truncation=True)
     ice_input = processor(
@@ -65,7 +69,11 @@ def collator_data(data_list, processor):
         input_prompts.append(ice + query)
 
     inputs = processor(
-        input_prompts, return_tensors="pt", padding=True, truncation=True
+        input_prompts,
+        return_tensors="pt",
+        padding=True,
+        truncation=True,
+        add_eos_token=True,
     )
     in_context_length = (
         ice_input["input_ids"] != processor.tokenizer.pad_token_id
