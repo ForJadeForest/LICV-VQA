@@ -54,22 +54,12 @@ def main(cfg: DictConfig):
         log_model=False,
     )
     wb_logger.log_hyperparams(dict(cfg))
-    model_cpk_callback = ModelCheckpoint(
-        filename="min_tl-{epoch}-{loss:.5f}",
-        monitor="loss",
-        save_last=True,
-        save_top_k=0,
-        mode="min",
-        save_weights_only=True,
-        dirpath=save_path,
-    )
     trainer = pl.Trainer(
         logger=wb_logger,
         callbacks=[
             LearningRateMonitor(),
             RichModelSummary(max_depth=2),
             RichProgressBar(),
-            # model_cpk_callback,
         ],
         **cfg.trainer,
         enable_checkpointing=False,
