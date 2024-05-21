@@ -42,6 +42,7 @@ class VQAICVDataModule(pl.LightningDataModule):
             self.data_cfg.bs,
             num_workers=self.data_cfg.num_workers,
             collate_fn=self.collator_data,
+            pin_memory=True,
         )
 
 

@@ -28,6 +28,7 @@ from icv_src.metrics import (
 
 @hydra.main(config_path="config", config_name="inference.yaml")
 def main(cfg: DictConfig):
+    logger.info(f"begin run: {cfg.run_name}")
     result_dir = Path(cfg.result_dir)
     model_name = cfg.model_name_or_path.split("/")[-1]
     save_path: Path = (
@@ -38,6 +39,15 @@ def main(cfg: DictConfig):
     meta_info_dir = save_path / "meta_info"
     if not meta_info_dir.exists():
         meta_info_dir.mkdir()
+
+    result_file = save_path / "result.json"
+    result_dict = {}
+    if result_file.exists() and cfg.re_eval:
+        result_dict = json.load(open(save_path / "result.json"))
+        logger.info(f"{save_path / 'result.json'} exists. LOADING...")
+    elif result_file.exists() and not cfg.re_eval:
+        logger.info(f"{save_path / 'result.json'} exists, EXIT...")
+        return
 
     if cfg.test_icv:
         model_cpk_dir = (
@@ -90,11 +100,6 @@ def main(cfg: DictConfig):
     processor = IdeficsProcessor.from_pretrained(cfg.model_name_or_path)
     if cfg.test_num != -1:
         val_ds = val_ds.select(range(cfg.test_num))
-
-    result_file = save_path / "result.json"
-    result_dict = {}
-    if result_file.exists():
-        result_dict = json.load(open(save_path / "result.json"))
 
     if cfg.test_icv:
         results_dict = icv_inference(
@@ -215,6 +220,7 @@ def icv_inference(
                 "prediction": generated[i],
                 "question_id": batch[i]["question_id"],
                 "answer_type": batch[i]["answer_type"],
+                "answer": batch[i]["answer"],
             }
             index += 1
 
