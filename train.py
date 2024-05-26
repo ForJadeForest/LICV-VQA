@@ -10,7 +10,6 @@ from dotenv import load_dotenv
 from omegaconf import DictConfig
 from pytorch_lightning.callbacks import (
     LearningRateMonitor,
-    ModelCheckpoint,
     RichModelSummary,
     RichProgressBar,
 )
@@ -24,6 +23,8 @@ from transformers import IdeficsProcessor
 from icv_src.icv_datamodule import VQAICVDataModule
 from icv_src.icv_model.icv_idefics import ICVIdeficsForVisionText2Text
 from icv_src.icv_module import VQAICVModule
+from utils import get_icv_cpk_path
+
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -36,13 +37,13 @@ def main(cfg: DictConfig):
         os.makedirs(cfg.result_dir)
 
     model_name = cfg.model_name.split("/")[-1]
-    save_path = os.path.join(
-        cfg.result_dir,
-        "model_cpk",
-        cfg.data_cfg.dataset.name,
-        model_name,
-        cfg.run_name,
+    save_path = get_icv_cpk_path(
+        result_dir=cfg.result_dir,
+        model_name=model_name,
+        dataset_name=cfg.data_cfg.dataset.name,
+        run_name=cfg.run_name,
     )
+
     save_path = Path(save_path)
     if (save_path / "icv_cpk.bin").exists():
         logger.info(f"{str(save_path / 'icv_cpk.bin')} exists! exit...")
