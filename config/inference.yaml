@@ -13,8 +13,17 @@ few_shot_list: [1, 2, 4, 8, 16, 32]
 run_name: debug
 result_dir: ${oc.env:RESULT_DIR}
 device: 'cuda'
+re_eval: False
 
 model_name_or_path: "${oc.env:MODEL_CPK_DIR}/idefics-9b"
+
+generate_kwargs:
+  max_new_tokens: 5
+  num_beams: 3
+  length_penalty: 0.0
+  min_new_tokens: 0
+
+
 
 hydra:
   run:
