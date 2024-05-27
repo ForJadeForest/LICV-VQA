@@ -1,60 +1,71 @@
 import datetime
 import json
-import os
 import random
-import uuid
 from pathlib import Path
-import numpy as np
+
 import hydra
-import pandas as pd
+import more_itertools
 import torch
 from dotenv import load_dotenv
-import more_itertools
+from loguru import logger
 from omegaconf import DictConfig
-from PIL import Image
-
 from tqdm import tqdm
 from transformers import IdeficsProcessor
 
-from icv_src.icv_datasets.vqa_dataset import load_vqav2_ds, load_okvqa_ds
+from icv_src.icv_datasets.vqa_dataset import load_okvqa_ds, load_vqav2_ds
 from icv_src.icv_model.icv_idefics import ICVIdeficsForVisionText2Text
 from icv_src.metrics import (
     compute_vqa_accuracy,
-    postprocess_vqa_generation,
     postprocess_ok_vqa_generation,
+    postprocess_vqa_generation,
 )
+from utils import get_icv_cpk_path, get_inference_paths
 
 
 @hydra.main(config_path="config", config_name="inference.yaml")
 def main(cfg: DictConfig):
+    logger.info(f"begin run: {cfg.run_name}")
     result_dir = Path(cfg.result_dir)
     model_name = cfg.model_name_or_path.split("/")[-1]
-    save_path: Path = (
-        result_dir / "inference" / model_name / cfg.data_cfg.dataset.name / cfg.run_name
+
+    save_dir, meta_info_dir, metric_file_path = get_inference_paths(
+        result_dir=result_dir,
+        model_name=model_name,
+        dataset_name=cfg.data_cfg.dataset.name,
+        run_name=cfg.run_name,
     )
-    if not save_path.exists():
-        save_path.mkdir(parents=True)
-    meta_info_dir = save_path / "meta_info"
+
+    if not save_dir.exists():
+        save_dir.mkdir(parents=True)
+
     if not meta_info_dir.exists():
         meta_info_dir.mkdir()
 
+    if not metric_file_path.exists():
+        result_dict = {}
+    elif cfg.re_eval:
+        result_dict = json.load(open(metric_file_path))
+        logger.info(f"{metric_file_path} exists. LOADING...")
+    elif not cfg.re_eval:
+        logger.info(f"{metric_file_path} exists, EXIT...")
+        return
+
+    icv = None
+    alpha = None
     if cfg.test_icv:
-        model_cpk_dir = (
-            result_dir
-            / "model_cpk"
-            / cfg.data_cfg.dataset.name
-            / model_name
-            / cfg.run_name
+        model_cpk_dir = get_icv_cpk_path(
+            result_dir,
+            model_name=model_name,
+            dataset_name=cfg.data_cfg.dataset.name,
+            run_name=cfg.run_name,
         )
         icv_cpk = torch.load(model_cpk_dir / "icv_cpk.bin")
         icv = icv_cpk["icv_encoder.icv"].to(cfg.device)
         alpha = icv_cpk["icv_encoder.alpha"].to(cfg.device)
         if icv_cpk.get("use_sigmoid", None):
             alpha = torch.sigmoid(alpha)
-        print("ICV loaded")
-    else:
-        icv = None
-        alpha = None
+        logger.info("ICV loaded")
+
     split = "validation"
     base_info = f"{str(datetime.datetime.now())}-{cfg.test_num=}-"
     if cfg.test_icl:
@@ -90,20 +101,16 @@ def main(cfg: DictConfig):
     if cfg.test_num != -1:
         val_ds = val_ds.select(range(cfg.test_num))
 
-    result_file = save_path / "result.json"
-    result_dict = {}
-    if result_file.exists():
-        result_dict = json.load(open(save_path / "result.json"))
-
     if cfg.test_icv:
         results_dict = icv_inference(
-            val_ds,
-            model,
-            processor,
-            cfg.bs,
-            cfg.data_cfg.dataset.instruction,
-            icv,
-            alpha,
+            val_ds=val_ds,
+            model=model,
+            processor=processor,
+            bs=cfg.bs,
+            generate_kwargs=cfg.generate_kwargs,
+            instruction=cfg.data_cfg.dataset.instruction,
+            in_context_vector=icv,
+            alpha=alpha,
         )
         preds = []
         for idx in results_dict:
@@ -119,24 +126,25 @@ def main(cfg: DictConfig):
         val_ques_path = cfg.data_cfg.dataset.val_ques_path
         val_ann_path = cfg.data_cfg.dataset.val_ann_path
         acc = compute_vqa_accuracy(preds, val_ques_path, val_ann_path)
-
+        logger.info(f"{cfg.run_name} ACC: {acc['overall']}")
         result_dict[base_info + "icv result"] = acc
-        with open(save_path / "result.json", "w") as f:
+        with open(metric_file_path, "w") as f:
             json.dump(result_dict, f, indent=4)
-        with open(save_path / "meta_info" / f"icv.json", "w") as f:
+        with open(meta_info_dir / f"{base_info}icv.json", "w") as f:
             json.dump(results_dict, f, indent=4)
 
     if cfg.test_icl:
         for shot_num in cfg.few_shot_list:
 
             results_dict = icl_inference(
-                train_ds,
-                val_ds,
-                shot_num,
-                model,
-                processor,
-                cfg.bs,
-                cfg.data_cfg.dataset.instruction,
+                train_ds=train_ds,
+                val_ds=val_ds,
+                shot_num=shot_num,
+                model=model,
+                processor=processor,
+                bs=cfg.bs,
+                generate_kwargs=cfg.generate_kwargs,
+                instruction=cfg.data_cfg.dataset.instruction,
             )
             preds = []
             for idx in results_dict:
@@ -154,9 +162,9 @@ def main(cfg: DictConfig):
             acc = compute_vqa_accuracy(preds, val_ques_path, val_ann_path)
             result_dict[base_info + f"shot{shot_num} result"] = acc
 
-            with open(save_path / "result.json", "w") as f:
+            with open(metric_file_path, "w") as f:
                 json.dump(result_dict, f, indent=4)
-            with open(save_path / "meta_info" / f"icl_shot{shot_num}.json", "w") as f:
+            with open(meta_info_dir / f"icl_shot{shot_num}.json", "w") as f:
                 json.dump(results_dict, f, indent=4)
 
 
@@ -166,6 +174,7 @@ def icv_inference(
     model,
     processor,
     bs,
+    generate_kwargs,
     instruction="",
     in_context_vector=None,
     alpha=None,
@@ -190,34 +199,51 @@ def icv_inference(
 
         query_inputs = processor(prompts)
         query_inputs = {k: v.to(model.device) for k, v in query_inputs.items()}
-        with torch.no_grad():
-            generated_out = model.generate(
-                **query_inputs,
-                in_context_vector=in_context_vector,
-                alpha=alpha,
-                max_new_tokens=5,
-                num_beams=3,
-                length_penalty=0.0,
-                min_new_tokens=0,
-            )
-        prompt_len = int(query_inputs["attention_mask"].shape[1])
-        outputs = generated_out.tolist()
 
-        generated = processor.tokenizer.batch_decode(
-            [output[prompt_len:] for output in outputs],
-            skip_special_tokens=True,
+        generated = generate_answers(
+            inputs=query_inputs,
+            model=model,
+            processor=processor,
+            generate_kwargs=generate_kwargs,
+            in_context_vector=in_context_vector,
+            alpha=alpha,
         )
 
         for i in range(len(batch)):
+            batch[i].pop("image")
             results_dict[index] = {
-                "image_id": batch[i]["image_id"],
                 "prediction": generated[i],
-                "question_id": batch[i]["question_id"],
-                "answer_type": batch[i]["answer_type"],
+                **batch[i],
             }
             index += 1
 
     return results_dict
+
+
+@torch.inference_mode()
+def generate_answers(
+    inputs,
+    model,
+    processor,
+    generate_kwargs,
+    in_context_vector=None,
+    alpha=None,
+):
+    with torch.no_grad():
+        generated_out = model.generate(
+            **inputs,
+            in_context_vector=in_context_vector,
+            alpha=alpha,
+            **generate_kwargs,
+        )
+    prompt_len = int(inputs["attention_mask"].shape[1])
+    outputs = generated_out.tolist()
+
+    generated = processor.tokenizer.batch_decode(
+        [output[prompt_len:] for output in outputs],
+        skip_special_tokens=True,
+    )
+    return generated
 
 
 @torch.inference_mode()
@@ -228,6 +254,7 @@ def icl_inference(
     model,
     processor,
     bs,
+    generate_kwargs,
     instruction="",
 ):
     results_dict = {}
@@ -265,30 +292,15 @@ def icl_inference(
 
         inputs = processor(prompts)
         inputs = {k: v.to(model.device) for k, v in inputs.items()}
-        with torch.no_grad():
-            generated_out = model.generate(
-                **inputs,
-                max_new_tokens=5,
-                num_beams=3,
-                length_penalty=0.0,
-                min_new_tokens=0,
-            )
-        prompt_len = int(inputs["attention_mask"].shape[1])
-        outputs = generated_out.tolist()
-
-        generated = processor.tokenizer.batch_decode(
-            [output[prompt_len:] for output in outputs],
-            skip_special_tokens=True,
+        generated = generate_answers(
+            inputs=inputs,
+            model=model,
+            processor=processor,
+            generate_kwargs=generate_kwargs,
         )
 
         for i in range(len(batch)):
-            results_dict[index] = {
-                "image_id": batch[i]["image_id"],
-                "prediction": generated[i],
-                "question_id": batch[i]["question_id"],
-                "answer_type": batch[i]["answer_type"],
-                "answer": batch[i]["answer"],
-            }
+            results_dict[index] = {"prediction": generated[i], **batch[i]}
             index += 1
 
     return results_dict
