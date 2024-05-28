@@ -11,8 +11,8 @@ from transformers import (
 class GlobalICVEncoder(BaseICVEncoder):
     def __init__(
         self,
-        llm_hidden_dim,
-        llm_layers,
+        lmm_hidden_dim,
+        lmm_layers,
         alpha_learnable=True,
         alpha_init_value=0.0,
         use_sigmoid=False,
@@ -20,10 +20,10 @@ class GlobalICVEncoder(BaseICVEncoder):
         super().__init__()
 
         self.alpha = torch.nn.Parameter(
-            torch.full(size=(1, llm_layers), fill_value=float(alpha_init_value)),
+            torch.full(size=(1, lmm_layers), fill_value=float(alpha_init_value)),
             requires_grad=alpha_learnable,
         )
-        self.icv = torch.nn.Parameter(torch.empty(1, llm_layers, llm_hidden_dim))
+        self.icv = torch.nn.Parameter(torch.empty(1, lmm_layers, lmm_hidden_dim))
         # 均值为0，标准差为0.01的正态分布
         torch.nn.init.normal_(self.icv, mean=0.0, std=0.01)
 
