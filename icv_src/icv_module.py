@@ -4,35 +4,45 @@ import torch
 from deepspeed.ops.adam import DeepSpeedCPUAdam
 from loguru import logger
 from torch import optim
-from transformers import get_cosine_schedule_with_warmup
+from transformers import get_cosine_schedule_with_warmup, IdeficsForVisionText2Text
+from baukit import TraceDict, get_module
 
 from .icv_encoder.global_icv_encoder import GlobalICVEncoder
-from .icv_model import ICVIdeficsForVisionText2Text
+from .icv_model.icv_intervention import LearnableICVInterventionLMM
+
+# from .icv_model import ICVIdeficsForVisionText2Text
 
 
 class VQAICVModule(pl.LightningModule):
     def __init__(
         self,
-        model: ICVIdeficsForVisionText2Text,
+        model: IdeficsForVisionText2Text,
         processor,
         module_cfg,
     ) -> None:
         super().__init__()
         self.save_hyperparameters(ignore=["model", "processor"])
+        self.module_cfg = module_cfg
         self.model = model
         self.processor = processor
 
         self.model.requires_grad_(False)
         self.model.gradient_checkpointing_enable()
 
-        self.module_cfg = module_cfg
+        self.icv_model = LearnableICVInterventionLMM(
+            model,
+            module_cfg.lmm.intervention_layer,
+            module_cfg.lmm.layer_format,
+            module_cfg.lmm.total_layers,
+        )
+
         icv_encoder_factor: GlobalICVEncoder = hydra.utils.instantiate(
             module_cfg.icv_encoder, _partial_=True
         )
-        layers = self.model.config.num_hidden_layers
+        icv_layer_num = len(self.icv_model.intervention_layer_names)
         hidden_dim = self.model.config.hidden_size
         self.icv_encoder = icv_encoder_factor(
-            llm_hidden_dim=hidden_dim, llm_layers=layers
+            lmm_hidden_dim=hidden_dim, lmm_layers=icv_layer_num
         )
 
         self.temperature = torch.nn.Parameter(
@@ -76,21 +86,24 @@ class VQAICVModule(pl.LightningModule):
         query_mask = self.get_mask(query_input, query_x_length)
 
         icv_encoder_output = self.icv_encoder()
-        labels = None
-        if self.module_cfg.hard_loss_weight:
-            labels = query_input["input_ids"]
 
-        icv_outputs = self.model(
-            **query_input,
-            in_context_vector=icv_encoder_output.in_context_vector,
-            alpha=icv_encoder_output.alpha,
-            labels=labels,
+        icv = (
+            icv_encoder_output.alpha.unsqueeze(dim=-1)
+            * icv_encoder_output.in_context_vector
         )
+
+        if self.module_cfg.hard_loss_weight:
+            query_input["labels"] = query_input["input_ids"]
+
+        self.icv_model.toggle_intervention(True)
+        icv_outputs = self.icv_model(query_input, icv=icv)
+
         if self.module_cfg.only_hard_loss:
             return {"loss": icv_outputs["loss"]}, icv_encoder_output
         icv_logits = icv_outputs["logits"]
         with torch.no_grad():
-            ice_logits = self.model(**inputs)["logits"]
+            self.icv_model.toggle_intervention(False)
+            ice_logits = self.icv_model(inputs)["logits"]
 
         loss = 0.0
         kl_loss = self.calculate_kl_divergence(

@@ -14,11 +14,13 @@ from transformers import IdeficsProcessor
 
 from icv_src.icv_datasets.vqa_dataset import load_okvqa_ds, load_vqav2_ds
 from icv_src.icv_model.icv_idefics import ICVIdeficsForVisionText2Text
+from icv_src.icv_model.icv_intervention import LearnableICVInterventionLMM
 from icv_src.metrics import (
     compute_vqa_accuracy,
     postprocess_ok_vqa_generation,
     postprocess_vqa_generation,
 )
+from baukit import TraceDict, get_module
 from utils import get_icv_cpk_path, get_inference_paths
 
 
@@ -59,9 +61,10 @@ def main(cfg: DictConfig):
             dataset_name=cfg.data_cfg.dataset.name,
             run_name=cfg.run_name,
         )
-        icv_cpk = torch.load(model_cpk_dir / "icv_cpk.bin")
+        icv_cpk = torch.load(model_cpk_dir / "icv_cpk.pth")
         icv = icv_cpk["icv_encoder.icv"].to(cfg.device)
         alpha = icv_cpk["icv_encoder.alpha"].to(cfg.device)
+        intervention_lmm_args = dict(icv_cpk["icv_intervention_args"])
         if icv_cpk.get("use_sigmoid", None):
             alpha = torch.sigmoid(alpha)
         logger.info("ICV loaded")
@@ -97,14 +100,18 @@ def main(cfg: DictConfig):
         val_ds = ds
     model = ICVIdeficsForVisionText2Text.from_pretrained(cfg.model_name_or_path)
     model = model.to(cfg.device, torch.bfloat16)
+    intervention_lmm_args.pop("model_name")
+    icv_model = LearnableICVInterventionLMM(model, **intervention_lmm_args)
     processor = IdeficsProcessor.from_pretrained(cfg.model_name_or_path)
     if cfg.test_num != -1:
         val_ds = val_ds.select(range(cfg.test_num))
 
     if cfg.test_icv:
+        icv_model.toggle_intervention(True)
+        logger.info(f"{icv_model.intervention_enabled=}")
         results_dict = icv_inference(
             val_ds=val_ds,
-            model=model,
+            model=icv_model,
             processor=processor,
             bs=cfg.bs,
             generate_kwargs=cfg.generate_kwargs,
@@ -134,13 +141,14 @@ def main(cfg: DictConfig):
             json.dump(results_dict, f, indent=4)
 
     if cfg.test_icl:
+        icv_model.toggle_intervention(False)
         for shot_num in cfg.few_shot_list:
 
             results_dict = icl_inference(
                 train_ds=train_ds,
                 val_ds=val_ds,
                 shot_num=shot_num,
-                model=model,
+                model=icv_model,
                 processor=processor,
                 bs=cfg.bs,
                 generate_kwargs=cfg.generate_kwargs,
@@ -198,7 +206,7 @@ def icv_inference(
             )
 
         query_inputs = processor(prompts)
-        query_inputs = {k: v.to(model.device) for k, v in query_inputs.items()}
+        query_inputs = {k: v.to(model.lmm.device) for k, v in query_inputs.items()}
 
         generated = generate_answers(
             inputs=query_inputs,
@@ -229,13 +237,11 @@ def generate_answers(
     in_context_vector=None,
     alpha=None,
 ):
-    with torch.no_grad():
-        generated_out = model.generate(
-            **inputs,
-            in_context_vector=in_context_vector,
-            alpha=alpha,
-            **generate_kwargs,
-        )
+    icv = None
+    if in_context_vector is not None:
+        icv = alpha.unsqueeze(dim=-1) * in_context_vector
+
+    generated_out = model.generate(inputs, generate_kwargs, icv=icv)
     prompt_len = int(inputs["attention_mask"].shape[1])
     outputs = generated_out.tolist()
 
