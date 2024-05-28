@@ -94,6 +94,7 @@ def main(cfg: DictConfig):
 
 @rank_zero_only
 def postprocess(cfg, save_path):
+    # TODO: Save layer map
     save_path = Path(save_path)
     if "deepspeed" in cfg.trainer.strategy:
         cpk_save_path = save_path / "last.ckpt"
@@ -103,12 +104,15 @@ def postprocess(cfg, save_path):
         checkpoint = torch.load(output_file)
         params_name = list(checkpoint["state_dict"].keys())
         for name in params_name:
-            if name.startswith("model"):
+            if "lmm" in name:
                 checkpoint["state_dict"].pop(name)
         checkpoint["state_dict"]["use_sigmoid"] = getattr(
             cfg.icv_module.icv_encoder, "use_sigmoid", None
         )
-        torch.save(checkpoint["state_dict"], save_path / "icv_cpk.bin")
+        checkpoint["state_dict"]["icv_intervention_args"] = checkpoint[
+            "hyper_parameters"
+        ]["module_cfg"]["lmm"]
+        torch.save(checkpoint["state_dict"], save_path / "icv_cpk.pth")
         os.remove(output_file)
         shutil.rmtree(
             cpk_save_path,
