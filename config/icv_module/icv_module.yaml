@@ -1,5 +1,6 @@
 defaults:
   - icv_encoder: global_icv_encoder
+  - lmm: idefics9B
 
 hard_loss_weight: 0.
 only_hard_loss: False
@@ -9,6 +10,8 @@ decay_ratio: -1
 decay_per_step: -1
 min_tmeprature: 1.
 learnable_t: False
+
+
 
 
 kl_eps: 1e-6
