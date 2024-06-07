@@ -7,6 +7,7 @@ from torch import optim
 from transformers import get_cosine_schedule_with_warmup
 
 from .icv_encoder.global_icv_encoder import GlobalICVEncoder
+from .icv_encoder.clip_icv_encoder import CLIPICVEncoder
 from .icv_model import ICVIdeficsForVisionText2Text
 
 
@@ -26,9 +27,14 @@ class VQAICVModule(pl.LightningModule):
         self.model.gradient_checkpointing_enable()
 
         self.module_cfg = module_cfg
-        icv_encoder_factor: GlobalICVEncoder = hydra.utils.instantiate(
-            module_cfg.icv_encoder, _partial_=True
-        )
+        if module_cfg.icv_encoder["embedding_name"] == "base":
+            icv_encoder_factor: GlobalICVEncoder = hydra.utils.instantiate(
+                module_cfg.icv_encoder, _partial_=True
+            )
+        elif module_cfg.icv_encoder["embedding_name"] == "clip":
+            icv_encoder_factor: CLIPICVEncoder = hydra.utils.instantiate(
+                module_cfg.icv_encoder, _partial_=True
+            )
         layers = self.model.config.num_hidden_layers
         hidden_dim = self.model.config.hidden_size
         self.icv_encoder = icv_encoder_factor(
@@ -63,6 +69,7 @@ class VQAICVModule(pl.LightningModule):
         inputs,
         query_x_length,
         in_context_length,
+        clip_input,
     ) -> torch.Any:
         """
         in_context_input: shot_num1 + ... + shot_num_n, seq_len
@@ -74,8 +81,7 @@ class VQAICVModule(pl.LightningModule):
         original_mask_length = query_x_length + in_context_length - 1
         original_mask = self.get_mask(inputs, original_mask_length)
         query_mask = self.get_mask(query_input, query_x_length)
-
-        icv_encoder_output = self.icv_encoder()
+        icv_encoder_output = self.icv_encoder(clip_input)
         labels = None
         if self.module_cfg.hard_loss_weight:
             labels = query_input["input_ids"]
@@ -86,20 +92,21 @@ class VQAICVModule(pl.LightningModule):
             alpha=icv_encoder_output.alpha,
             labels=labels,
         )
-        if self.module_cfg.only_hard_loss:
-            return {"loss": icv_outputs["loss"]}, icv_encoder_output
         icv_logits = icv_outputs["logits"]
         with torch.no_grad():
             ice_logits = self.model(**inputs)["logits"]
 
         loss = 0.0
-        kl_loss = self.calculate_kl_divergence(
-            icv_logits[query_mask].view(-1, icv_logits.shape[-1]),
-            ice_logits[original_mask].view(-1, ice_logits.shape[-1]),
-        )
-        loss += kl_loss
+        kl_loss = 0
+        loss_dict = {}
+        if self.module_cfg.kl_loss:
+            kl_loss = self.calculate_kl_divergence(
+                icv_logits[query_mask].view(-1, icv_logits.shape[-1]),
+                ice_logits[original_mask].view(-1, ice_logits.shape[-1]),
+            )
+            loss += kl_loss
+            loss_dict = {"kl_loss": kl_loss}
 
-        loss_dict = {"kl_loss": kl_loss}
         if self.module_cfg.hard_loss_weight:
             loss += self.module_cfg.hard_loss_weight * icv_outputs["loss"]
             loss_dict["ce_loss"] = icv_outputs["loss"]
