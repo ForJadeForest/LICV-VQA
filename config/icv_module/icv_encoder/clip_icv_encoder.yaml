@@ -1,0 +1,7 @@
+_target_: icv_src.icv_encoder.clip_icv_encoder.CLIPICVEncoder
+
+use_sigmoid: True
+alpha_learnable: True
+alpha_init_value: 0.
+embedding_name: clip
+clip_path: "/data1/pyz/model_weight/clip-vit-base-patch32/"
