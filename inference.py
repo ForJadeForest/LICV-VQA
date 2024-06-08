@@ -364,12 +364,20 @@ def clip_icv_inference(
     for batch in more_itertools.chunked(tqdm(val_ds, total=len(val_ds)), bs):
         images = [sample["image"] for sample in batch]
         if instruction:
-            prompts = [[instruction] for _ in range(bs)]
+            prompts = [[instruction] for _ in range(bs)] #clip_input
+            input_prompts = [[instruction] for _ in range(bs)] #ide_input
         else:
             prompts = [[] for _ in range(bs)]
+            input_prompts = [[instruction] for _ in range(bs)] #ide_input
         for i, sample in enumerate(batch):
             prompts[i].extend(
                 [
+                    f"Question:{sample['question']} Short answer:",
+                ]
+            )
+            input_prompts[i].extend(
+                [
+                    sample["image"],
                     f"Question:{sample['question']} Short answer:",
                 ]
             )
@@ -382,7 +390,7 @@ def clip_icv_inference(
                 )
         clip_data = clip_data.to(model.device)
         in_context_vector = clip_icv_encoder([clip_data]).in_context_vector
-        query_inputs = processor(prompts)
+        query_inputs = processor(input_prompts)
         query_inputs = {k: v.to(model.device) for k, v in query_inputs.items()}
         with torch.no_grad():
             generated_out = model.generate(
