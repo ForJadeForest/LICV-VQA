@@ -4,26 +4,20 @@ defaults:
 
 
 
-test_icv: True
+test_icv: False
 test_icl: False
-bs: 4
+test_clip_icv: True
+bs: 1
 test_num: -1
 few_shot_list: [1, 2, 4, 8, 16, 32]
 
-run_name: debug
+run_name: fv_vqav2
 result_dir: ${oc.env:RESULT_DIR}
-device: 'cuda'
-re_eval: False
-
+device: 'cuda:3'
+start: 0
+end: 32
 model_name_or_path: "${oc.env:MODEL_CPK_DIR}/idefics-9b"
-
-generate_kwargs:
-  max_new_tokens: 5
-  num_beams: 3
-  length_penalty: 0.0
-  min_new_tokens: 0
-
-
+clip_path: "${oc.env:MODEL_CPK_DIR}/clip-vit-base-patch32"
 
 hydra:
   run:
