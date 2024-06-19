@@ -2,7 +2,7 @@ from functools import partial
 
 import pytorch_lightning as pl
 from torch.utils.data import DataLoader
-
+from .lmm_interface.base_interface import LMMInterface
 from .icv_datasets.vqa_dataset import VQAV2Dataset
 
 
@@ -46,22 +46,23 @@ class VQAICVDataModule(pl.LightningDataModule):
         )
 
 
-def collator_data(data_list, processor):
+def collator_data(data_list, interface: LMMInterface):
     sample = data_list[0]
     data_dict = {k: [d[k] for d in data_list] for k in sample.keys()}
     query_prompt = data_dict["query_prompt"]
     ice_prompt = data_dict["ice_prompt"]
     query_x = data_dict["query_x"]
 
-    query_input = processor(
+    query_input = interface.prepare_input(
         query_prompt,
-        return_tensors="pt",
         padding=True,
         truncation=True,
         add_eos_token=True,
     )
-    query_x = processor(query_x, return_tensors="pt", padding=True, truncation=True)
-    ice_input = processor(
+    query_x = interface.prepare_input(
+        query_x, return_tensors="pt", padding=True, truncation=True
+    )
+    ice_input = interface.prepare_input(
         ice_prompt, return_tensors="pt", padding=True, truncation=True
     )
     input_prompts = []
@@ -69,7 +70,7 @@ def collator_data(data_list, processor):
     for ice, query in zip(ice_prompt, query_prompt):
         input_prompts.append(ice + query)
 
-    inputs = processor(
+    inputs = interface.prepare_input(
         input_prompts,
         return_tensors="pt",
         padding=True,
@@ -77,9 +78,9 @@ def collator_data(data_list, processor):
         add_eos_token=True,
     )
     in_context_length = (
-        ice_input["input_ids"] != processor.tokenizer.pad_token_id
+        ice_input["input_ids"] != interface.tokenizer.pad_token_id
     ).sum(dim=1)
-    query_x_length = (query_x["input_ids"] != processor.tokenizer.pad_token_id).sum(
+    query_x_length = (query_x["input_ids"] != interface.tokenizer.pad_token_id).sum(
         dim=1
     )
     return {

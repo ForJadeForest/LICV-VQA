@@ -2,6 +2,7 @@ from torch.utils.data import Dataset
 from loguru import logger
 import numpy as np
 from .load_ds_utils import load_okvqa_ds, load_vqav2_ds
+from icv_src.lmm_interface.base_interface import LMMInterface
 
 
 class VQAV2Dataset(Dataset):
@@ -11,6 +12,7 @@ class VQAV2Dataset(Dataset):
         root_dir,
         train_coco_dataset_root,
         val_coco_dataset_root,
+        model_interface: LMMInterface,
         instruction="",
         few_shot_num=8,
         max_train_size=10000,
@@ -20,6 +22,7 @@ class VQAV2Dataset(Dataset):
         select_from_query=True,
     ):
         super().__init__()
+        self.model_interface = model_interface
         if name == "vqav2":
             ds = load_vqav2_ds(
                 root_dir,
@@ -77,6 +80,9 @@ class VQAV2Dataset(Dataset):
             select_global_idx = self.select_ds[few_shot_index]["idx"]
 
         in_context_example = [self.select_ds[idx] for idx in few_shot_index]
+        in_context_text = [
+            self.model_interface.gen_text_with_label(ice, add_image_token=True)
+        ]
 
         prompt = []
         if self.instruction:
