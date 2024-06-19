@@ -1,4 +1,5 @@
 from pathlib import Path
+from transformers import Idefics2ForConditionalGeneration
 
 
 def get_icv_cpk_path(result_dir, model_name, dataset_name, run_name):

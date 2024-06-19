@@ -18,10 +18,9 @@ from pytorch_lightning.utilities import rank_zero_only
 from pytorch_lightning.utilities.deepspeed import (
     convert_zero_checkpoint_to_fp32_state_dict,
 )
-from transformers import IdeficsProcessor
+from transformers import IdeficsProcessor, IdeficsForVisionText2Text
 
 from icv_src.icv_datamodule import VQAICVDataModule
-from icv_src.icv_model.icv_idefics import ICVIdeficsForVisionText2Text
 from icv_src.icv_module import VQAICVModule
 from utils import get_icv_cpk_path
 
@@ -67,7 +66,7 @@ def main(cfg: DictConfig):
     )
     model_path = Path(cfg.model_cpk_dir) / cfg.model_name
 
-    model = ICVIdeficsForVisionText2Text.from_pretrained(model_path)
+    model = IdeficsForVisionText2Text.from_pretrained(model_path)
     processor = IdeficsProcessor.from_pretrained(model_path)
     processor.tokenizer.padding_side = "right"
 

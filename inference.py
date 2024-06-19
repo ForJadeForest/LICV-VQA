@@ -10,17 +10,15 @@ from dotenv import load_dotenv
 from loguru import logger
 from omegaconf import DictConfig
 from tqdm import tqdm
-from transformers import IdeficsProcessor
+from transformers import IdeficsProcessor, IdeficsForVisionText2Text
 
 from icv_src.icv_datasets.vqa_dataset import load_okvqa_ds, load_vqav2_ds
-from icv_src.icv_model.icv_idefics import ICVIdeficsForVisionText2Text
 from icv_src.icv_model.icv_intervention import LearnableICVInterventionLMM
 from icv_src.metrics import (
     compute_vqa_accuracy,
     postprocess_ok_vqa_generation,
     postprocess_vqa_generation,
 )
-from baukit import TraceDict, get_module
 from utils import get_icv_cpk_path, get_inference_paths
 
 
@@ -28,7 +26,7 @@ from utils import get_icv_cpk_path, get_inference_paths
 def main(cfg: DictConfig):
     logger.info(f"begin run: {cfg.run_name}")
     result_dir = Path(cfg.result_dir)
-    model_name = cfg.model_name_or_path.split("/")[-1]
+    model_name = cfg.model_name
 
     save_dir, meta_info_dir, metric_file_path = get_inference_paths(
         result_dir=result_dir,
@@ -98,8 +96,8 @@ def main(cfg: DictConfig):
         train_ds = ds["train"]
     else:
         val_ds = ds
-    model = ICVIdeficsForVisionText2Text.from_pretrained(cfg.model_name_or_path)
-    model = model.to(cfg.device, torch.bfloat16)
+    model = IdeficsForVisionText2Text.from_pretrained(cfg.model_name_or_path)
+    # model = model.to(cfg.device, torch.bfloat16)
     intervention_lmm_args.pop("model_name")
     icv_model = LearnableICVInterventionLMM(model, **intervention_lmm_args)
     processor = IdeficsProcessor.from_pretrained(cfg.model_name_or_path)
