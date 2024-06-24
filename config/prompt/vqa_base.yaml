@@ -1,0 +1,9 @@
+column_token_map:
+  question: "<Q>"
+  answer: "<A>"
+
+label_filed: "answer"
+image_field: "image"
+sep_token: "\n\n"
+instruction: "Provide an answer to the question. Use the image to answer.\n"
+

@@ -1,0 +1,7 @@
+column_token_map:
+  single_caption: <X>
+
+label_filed: "single_caption"
+image_field: "image"
+sep_token: "\n\n"
+instruction: ""
