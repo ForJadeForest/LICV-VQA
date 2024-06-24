@@ -20,6 +20,7 @@ class VQAICVModule(pl.LightningModule):
         lmm_cfg,
     ) -> None:
         super().__init__()
+        self.save_hyperparameters(ignore=["interface"])
         self.module_cfg = module_cfg
         self.lmm_cfg = lmm_cfg
         self.interface = interface
