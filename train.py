@@ -5,8 +5,8 @@ from pathlib import Path
 import hydra
 import pytorch_lightning as pl
 import torch
-from loguru import logger
 from dotenv import load_dotenv
+from loguru import logger
 from omegaconf import DictConfig
 from pytorch_lightning.callbacks import (
     LearningRateMonitor,
@@ -18,12 +18,10 @@ from pytorch_lightning.utilities import rank_zero_only
 from pytorch_lightning.utilities.deepspeed import (
     convert_zero_checkpoint_to_fp32_state_dict,
 )
-from transformers import IdeficsProcessor, IdeficsForVisionText2Text
 
 from icv_src.icv_datamodule import VQAICVDataModule
 from icv_src.icv_module import VQAICVModule
-from utils import get_icv_cpk_path
-
+from utils import get_icv_cpk_path, init_interface
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -35,11 +33,11 @@ def main(cfg: DictConfig):
     if not os.path.exists(cfg.result_dir):
         os.makedirs(cfg.result_dir)
 
-    model_name = cfg.model_name.split("/")[-1]
+    model_name = cfg.lmm.name.split("/")[-1]
     save_path = get_icv_cpk_path(
         result_dir=cfg.result_dir,
         model_name=model_name,
-        dataset_name=cfg.data_cfg.dataset.name,
+        dataset_name=cfg.data_cfg.task.task_name,
         run_name=cfg.run_name,
     )
 
@@ -64,18 +62,14 @@ def main(cfg: DictConfig):
         **cfg.trainer,
         enable_checkpointing=False,
     )
-    model_path = Path(cfg.model_cpk_dir) / cfg.model_name
-
-    model = IdeficsForVisionText2Text.from_pretrained(model_path)
-    processor = IdeficsProcessor.from_pretrained(model_path)
-    processor.tokenizer.padding_side = "right"
+    prompt_manager, interface, processor = init_interface(cfg)
 
     model = VQAICVModule(
-        model=model,
-        processor=processor,
-        module_cfg=cfg.icv_module,
+        interface=interface, module_cfg=cfg.icv_module, lmm_cfg=cfg.lmm
     )
-    data_module = VQAICVDataModule(data_cfg=cfg.data_cfg, processor=processor)
+    data_module = VQAICVDataModule(
+        data_cfg=cfg.data_cfg, prompt_manager=prompt_manager, prompt_processor=processor
+    )
 
     trainer.fit(
         model,
