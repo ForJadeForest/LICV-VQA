@@ -1,8 +1,10 @@
-from torch.utils.data import Dataset
-from loguru import logger
 import numpy as np
+from loguru import logger
+from torch.utils.data import Dataset
+
+from lmm_icl_interface import LMMPromptManager
+
 from .load_ds_utils import load_okvqa_ds, load_vqav2_ds
-from icv_src.lmm_interface.base_interface import LMMInterface
 
 
 class VQAV2Dataset(Dataset):
@@ -12,7 +14,7 @@ class VQAV2Dataset(Dataset):
         root_dir,
         train_coco_dataset_root,
         val_coco_dataset_root,
-        model_interface: LMMInterface,
+        prompt_manager: LMMPromptManager,
         instruction="",
         few_shot_num=8,
         max_train_size=10000,
@@ -22,7 +24,7 @@ class VQAV2Dataset(Dataset):
         select_from_query=True,
     ):
         super().__init__()
-        self.model_interface = model_interface
+        self.prompt_manager = prompt_manager
         if name == "vqav2":
             ds = load_vqav2_ds(
                 root_dir,
@@ -81,22 +83,29 @@ class VQAV2Dataset(Dataset):
 
         in_context_example = [self.select_ds[idx] for idx in few_shot_index]
         in_context_text = [
-            self.model_interface.gen_text_with_label(ice, add_image_token=True)
+            [
+                ice["image"],
+                self.prompt_manager.gen_ice_text_with_label(ice, add_sep_token=True),
+            ]
+            for ice in in_context_example
         ]
-
         prompt = []
         if self.instruction:
             prompt = [self.instruction]
-        for ice in in_context_example:
-            prompt.append(ice["image"])
-            prompt.append(f"Question:{ice['question']} Short answer:{ice['answer']}\n")
+        for ic_prompt in in_context_text:
+            prompt.extend(ic_prompt)
 
         query_prompt = [
             query_item["image"],
-            f"Question:{query_item['question']} Short answer:{query_item['answer']}",
+            self.prompt_manager.gen_ice_text_with_label(
+                query_item, add_sep_token=False
+            ),
         ]
 
-        query_x = [ice["image"], f"Question:{query_item['question']} Short answer:"]
+        query_x = [
+            query_item["image"],
+            self.prompt_manager.gen_query_text_without_label(query_item),
+        ]
         return {
             "ice_prompt": prompt,
             "query_prompt": query_prompt,
