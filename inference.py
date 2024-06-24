@@ -19,7 +19,8 @@ from icv_src.metrics import (
     postprocess_ok_vqa_generation,
     postprocess_vqa_generation,
 )
-from utils import get_icv_cpk_path, get_inference_paths
+from utils import get_icv_cpk_path, get_inference_paths, init_interface, init_dataset
+from lmm_icl_interface import LMMPromptManager
 
 
 @hydra.main(config_path="config", config_name="inference.yaml")
@@ -62,7 +63,7 @@ def main(cfg: DictConfig):
         icv_cpk = torch.load(model_cpk_dir / "icv_cpk.pth")
         icv = icv_cpk["icv_encoder.icv"].to(cfg.device)
         alpha = icv_cpk["icv_encoder.alpha"].to(cfg.device)
-        intervention_lmm_args = dict(icv_cpk["icv_intervention_args"])
+        lmm_args = dict(icv_cpk["lmm_args"])
         if icv_cpk.get("use_sigmoid", None):
             alpha = torch.sigmoid(alpha)
         logger.info("ICV loaded")
@@ -72,35 +73,22 @@ def main(cfg: DictConfig):
     if cfg.test_icl:
         split = None
 
-    if cfg.data_cfg.dataset.name == "vqav2":
-        ds = load_vqav2_ds(
-            cfg.data_cfg.dataset.root_dir,
-            cfg.data_cfg.dataset.train_coco_dataset_root,
-            cfg.data_cfg.dataset.val_coco_dataset_root,
-            split,
-            val_ann_file=cfg.data_cfg.dataset.val_ann_path,
-        )
-        post_process_fun = postprocess_vqa_generation
-    elif cfg.data_cfg.dataset.name == "okvqa":
-        ds = load_okvqa_ds(
-            cfg.data_cfg.dataset.root_dir,
-            cfg.data_cfg.dataset.train_coco_dataset_root,
-            cfg.data_cfg.dataset.val_coco_dataset_root,
-            split,
-        )
-        post_process_fun = postprocess_ok_vqa_generation
-    else:
-        raise ValueError(f"{cfg.data_cfg.dataset.name=} error")
+    ds, post_process_fun = init_dataset(cfg, split)
+
     if cfg.test_icl:
         val_ds = ds["validation"]
         train_ds = ds["train"]
     else:
         val_ds = ds
-    model = IdeficsForVisionText2Text.from_pretrained(cfg.model_name_or_path)
+
+    prompt_manager, interface, processor = init_interface(cfg)
     # model = model.to(cfg.device, torch.bfloat16)
-    intervention_lmm_args.pop("model_name")
-    icv_model = LearnableICVInterventionLMM(model, **intervention_lmm_args)
-    processor = IdeficsProcessor.from_pretrained(cfg.model_name_or_path)
+    icv_model = LearnableICVInterventionLMM(
+        interface,
+        lmm_args.intervention_layer,
+        lmm_args.layer_format,
+        lmm_args.total_layers,
+    )
     if cfg.test_num != -1:
         val_ds = val_ds.select(range(cfg.test_num))
 
@@ -109,11 +97,12 @@ def main(cfg: DictConfig):
         logger.info(f"{icv_model.intervention_enabled=}")
         results_dict = icv_inference(
             val_ds=val_ds,
-            model=icv_model,
+            icv_model=icv_model,
+            prompt_manager=prompt_manager,
             processor=processor,
             bs=cfg.bs,
             generate_kwargs=cfg.generate_kwargs,
-            instruction=cfg.data_cfg.dataset.instruction,
+            instruction=cfg.prompt.instruction,
             in_context_vector=icv,
             alpha=alpha,
         )
@@ -146,11 +135,12 @@ def main(cfg: DictConfig):
                 train_ds=train_ds,
                 val_ds=val_ds,
                 shot_num=shot_num,
-                model=icv_model,
+                icv_model=icv_model,
+                prompt_manager=prompt_manager,
                 processor=processor,
                 bs=cfg.bs,
                 generate_kwargs=cfg.generate_kwargs,
-                instruction=cfg.data_cfg.dataset.instruction,
+                instruction=cfg.prompt.instruction,
             )
             preds = []
             for idx in results_dict:
@@ -177,7 +167,8 @@ def main(cfg: DictConfig):
 @torch.inference_mode()
 def icv_inference(
     val_ds,
-    model,
+    icv_model,
+    prompt_manager: LMMPromptManager,
     processor,
     bs,
     generate_kwargs,
@@ -196,19 +187,20 @@ def icv_inference(
         else:
             prompts = [[] for _ in range(bs)]
         for i, sample in enumerate(batch):
+
             prompts[i].extend(
                 [
                     sample["image"],
-                    f"Question:{sample['question']} Short answer:",
+                    prompt_manager.gen_query_text_without_label(sample),
                 ]
             )
 
-        query_inputs = processor(prompts)
-        query_inputs = {k: v.to(model.lmm.device) for k, v in query_inputs.items()}
+        query_inputs = processor.prepare_input(prompts)
+        query_inputs = {k: v.to(icv_model.lmm.device) for k, v in query_inputs.items()}
 
         generated = generate_answers(
             inputs=query_inputs,
-            model=model,
+            icv_model=icv_model,
             processor=processor,
             generate_kwargs=generate_kwargs,
             in_context_vector=in_context_vector,
@@ -229,7 +221,7 @@ def icv_inference(
 @torch.inference_mode()
 def generate_answers(
     inputs,
-    model,
+    icv_model,
     processor,
     generate_kwargs,
     in_context_vector=None,
@@ -239,7 +231,7 @@ def generate_answers(
     if in_context_vector is not None:
         icv = alpha.unsqueeze(dim=-1) * in_context_vector
 
-    generated_out = model.generate(inputs, generate_kwargs, icv=icv)
+    generated_out = icv_model.generate(inputs, generate_kwargs, icv=icv)
     prompt_len = int(inputs["attention_mask"].shape[1])
     outputs = generated_out.tolist()
 
@@ -255,7 +247,8 @@ def icl_inference(
     train_ds,
     val_ds,
     few_shot_num,
-    model,
+    icv_model: LearnableICVInterventionLMM,
+    prompt_manager: LMMPromptManager,
     processor,
     bs,
     generate_kwargs,
@@ -284,21 +277,21 @@ def icl_inference(
                 prompts[i].extend(
                     [
                         ice["image"],
-                        f"Question:{ice['question']} Short answer:{ice['answer']}",
+                        prompt_manager.gen_ice_text_with_label(ice, add_sep_token=True),
                     ]
                 )
             prompts[i].extend(
                 [
                     sample["image"],
-                    f"Question:{sample['question']} Short answer:",
+                    prompt_manager.gen_query_text_without_label(sample),
                 ]
             )
 
-        inputs = processor(prompts)
-        inputs = {k: v.to(model.device) for k, v in inputs.items()}
+        inputs = processor.prepare_input(prompts)
+        inputs = {k: v.to(icv_model.device) for k, v in inputs.items()}
         generated = generate_answers(
             inputs=inputs,
-            model=model,
+            icv_model=icv_model,
             processor=processor,
             generate_kwargs=generate_kwargs,
         )
