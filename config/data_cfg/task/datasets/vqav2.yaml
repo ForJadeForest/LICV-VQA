@@ -13,4 +13,4 @@ select_from_query: True
 # use for eval
 
 val_ques_path: ${oc.env:VQAV2_PATH}/v2_OpenEnded_mscoco_val2014_questions.json
-val_ann_path: ${oc.env:VQAV2_PATH}/${data_cfg.dataset.val_ann_file}
+val_ann_path: ${oc.env:VQAV2_PATH}/${data_cfg.task.datasets.val_ann_file}
