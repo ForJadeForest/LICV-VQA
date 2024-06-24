@@ -82,21 +82,21 @@ def init_interface(cfg):
 def init_dataset(cfg, split):
     if cfg.data_cfg.task.datasets.name == "vqav2":
         ds = load_vqav2_ds(
-            cfg.data_cfg.dataset.root_dir,
-            cfg.data_cfg.dataset.train_coco_dataset_root,
-            cfg.data_cfg.dataset.val_coco_dataset_root,
+            cfg.data_cfg.task.datasets.root_dir,
+            cfg.data_cfg.task.datasets.train_coco_dataset_root,
+            cfg.data_cfg.task.datasets.val_coco_dataset_root,
             split,
-            val_ann_file=cfg.data_cfg.dataset.val_ann_path,
+            val_ann_file=cfg.data_cfg.task.datasets.val_ann_path,
         )
         post_process_fun = postprocess_vqa_generation
-    elif cfg.data_cfg.task.dataset.name == "okvqa":
+    elif cfg.data_cfg.task.datasets.name == "okvqa":
         ds = load_okvqa_ds(
-            cfg.data_cfg.dataset.root_dir,
-            cfg.data_cfg.dataset.train_coco_dataset_root,
-            cfg.data_cfg.dataset.val_coco_dataset_root,
+            cfg.data_cfg.task.datasets.root_dir,
+            cfg.data_cfg.task.datasets.train_coco_dataset_root,
+            cfg.data_cfg.task.datasets.val_coco_dataset_root,
             split,
         )
         post_process_fun = postprocess_ok_vqa_generation
     else:
-        raise ValueError(f"{cfg.data_cfg.dataset.name=} error")
+        raise ValueError(f"{cfg.data_cfg.task.datasets.name=} error")
     return ds, post_process_fun
