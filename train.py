@@ -102,9 +102,7 @@ def postprocess(cfg, save_path):
         checkpoint["state_dict"]["use_sigmoid"] = getattr(
             cfg.icv_module.icv_encoder, "use_sigmoid", None
         )
-        checkpoint["state_dict"]["icv_intervention_args"] = checkpoint[
-            "hyper_parameters"
-        ]["module_cfg"]["lmm"]
+        checkpoint["state_dict"]["lmm_args"] = checkpoint["hyper_parameters"]["lmm_cfg"]
         torch.save(checkpoint["state_dict"], save_path / "icv_cpk.pth")
         os.remove(output_file)
         shutil.rmtree(
