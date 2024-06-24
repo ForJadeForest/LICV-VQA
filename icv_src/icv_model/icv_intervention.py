@@ -1,7 +1,9 @@
-from typing import Union, List
+import re
+from contextlib import nullcontext
+from typing import List, Union
+
 import torch.nn as nn
 from baukit import TraceDict
-from contextlib import nullcontext
 
 
 class LearnableICVInterventionLMM(nn.Module):
@@ -46,7 +48,7 @@ class LearnableICVInterventionLMM(nn.Module):
 
     def apply_icv_intervention(self, edit_layers, icv):
         def intervention_function(output, layer_name):
-            layer_idx = int(layer_name.split(".")[2])
+            layer_idx = re.findall(r"\d+", layer_name)[0]
             if layer_name in edit_layers and isinstance(output, tuple):
                 hidden_states, *rest = output
                 shift = icv[:, self.layer_to_icv_index[layer_idx]].unsqueeze(dim=1)
