@@ -1,5 +1,0 @@
-model_name: "idefics-9b"
-total_layers: 32
-
-layer_format: "model.layers.<LAYER_NUM>"
-intervention_layer: -1

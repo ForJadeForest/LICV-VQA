@@ -1,6 +1,6 @@
 defaults:
   - icv_encoder: global_icv_encoder
-  - lmm: idefics9B
+
 
 hard_loss_weight: 0.
 only_hard_loss: False
