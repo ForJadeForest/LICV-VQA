@@ -10,28 +10,35 @@ class LearnableICVInterventionLMM(nn.Module):
     def __init__(
         self,
         lmm: nn.Module,
-        intervention_layer: Union[int, List[int]],
-        layer_format: str,
-        total_layers: int,
+        enable_intervention=True,
+        intervention_layer: Union[int, List[int]] = None,
+        layer_format: str = None,
+        total_layers: int = None,
     ):
         super().__init__()
         self.lmm = lmm
-        self.total_layers = total_layers
-        self.intervention_layers = self._prepare_layers(intervention_layer)
-        self.intervention_layer_names = [
-            layer_format.replace("<LAYER_NUM>", str(layer))
-            for layer in self.intervention_layers
-        ]
-        self.layer_to_icv_index = {
-            layer_id: icv_idx
-            for layer_id, icv_idx in enumerate(self.intervention_layers)
-        }
-        self.intervention_enabled = True
+
+        if enable_intervention:
+            self.total_layers = total_layers
+            self.intervention_layers = self._prepare_layers(intervention_layer)
+            self.intervention_layer_names = [
+                layer_format.replace("<LAYER_NUM>", str(layer))
+                for layer in self.intervention_layers
+            ]
+            self.layer_to_icv_index = {
+                layer_id: icv_idx
+                for layer_id, icv_idx in enumerate(self.intervention_layers)
+            }
+            self.intervention_enabled = True
 
     def _prepare_layers(self, layers):
         if layers == -1:
             return list(range(self.total_layers))
         return [layers] if isinstance(layers, int) else layers
+
+    @property
+    def device(self):
+        return self.lmm.device
 
     @property
     def intervention_status(self) -> bool:
