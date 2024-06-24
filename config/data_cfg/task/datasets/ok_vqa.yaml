@@ -1,0 +1,14 @@
+task: vqa
+name: "okvqa"
+root_dir: ${oc.env:OKVQA_PATH}
+train_coco_dataset_root: ${oc.env:COCO_PATH}/mscoco2014/train2014
+val_coco_dataset_root: ${oc.env:COCO_PATH}/mscoco2014/val2014
+few_shot_num: 32
+split: 'train'
+max_train_size: 8000
+filter_ques_type: null
+select_from_query: True
+
+# use for eval
+val_ques_path: ${oc.env:OKVQA_PATH}/OpenEnded_mscoco_val2014_questions.json
+val_ann_path: ${oc.env:OKVQA_PATH}/mscoco_val2014_annotations.json
