@@ -1,0 +1,18 @@
+defaults:
+  - lmm_base
+
+name: "openflamingov2-9B"
+# args for intervention
+total_layers: 32
+layer_format: "model.lang_encoder.transformer.blocks.<LAYER_NUM>"
+intervention_layer: -1
+hidden_size: 4096
+
+# args for load model
+hf_root: OpenFlamingo-9B-vitl-mpt7b
+flamingo_checkpoint_dir: ${oc.env:CHECKPOINT_PATH}/${infer_model.hf_root}/
+lang_encoder_path: anas-awadalla-mpt-7b
+tokenizer_path: ${lmm.lang_encoder_path}
+cross_attn_every_n_layers: 4
+load_from_local: true
+init_device: "meta"
