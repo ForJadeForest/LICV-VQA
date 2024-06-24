@@ -1,5 +1,10 @@
 from pathlib import Path
 
+from icv_src.icv_datasets.vqa_dataset import load_okvqa_ds, load_vqav2_ds
+from icv_src.metrics import (
+    postprocess_ok_vqa_generation,
+    postprocess_vqa_generation,
+)
 from lmm_icl_interface import (
     Idefics2Interface,
     IdeficsInterface,
@@ -72,3 +77,26 @@ def init_interface(cfg):
         processor = interface.processor
 
     return prompt_manager, interface, processor
+
+
+def init_dataset(cfg, split):
+    if cfg.data_cfg.task.datasets.name == "vqav2":
+        ds = load_vqav2_ds(
+            cfg.data_cfg.dataset.root_dir,
+            cfg.data_cfg.dataset.train_coco_dataset_root,
+            cfg.data_cfg.dataset.val_coco_dataset_root,
+            split,
+            val_ann_file=cfg.data_cfg.dataset.val_ann_path,
+        )
+        post_process_fun = postprocess_vqa_generation
+    elif cfg.data_cfg.task.dataset.name == "okvqa":
+        ds = load_okvqa_ds(
+            cfg.data_cfg.dataset.root_dir,
+            cfg.data_cfg.dataset.train_coco_dataset_root,
+            cfg.data_cfg.dataset.val_coco_dataset_root,
+            split,
+        )
+        post_process_fun = postprocess_ok_vqa_generation
+    else:
+        raise ValueError(f"{cfg.data_cfg.dataset.name=} error")
+    return ds, post_process_fun
