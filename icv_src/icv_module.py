@@ -4,43 +4,42 @@ import torch
 from deepspeed.ops.adam import DeepSpeedCPUAdam
 from loguru import logger
 from torch import optim
-from transformers import get_cosine_schedule_with_warmup, IdeficsForVisionText2Text
-from baukit import TraceDict, get_module
+from transformers import get_cosine_schedule_with_warmup
+
+from lmm_icl_interface import LMMInterface
 
 from .icv_encoder.global_icv_encoder import GlobalICVEncoder
 from .icv_model.icv_intervention import LearnableICVInterventionLMM
-
-# from .icv_model import ICVIdeficsForVisionText2Text
 
 
 class VQAICVModule(pl.LightningModule):
     def __init__(
         self,
-        model: IdeficsForVisionText2Text,
-        processor,
+        interface: LMMInterface,
         module_cfg,
+        lmm_cfg,
     ) -> None:
         super().__init__()
-        self.save_hyperparameters(ignore=["model", "processor"])
         self.module_cfg = module_cfg
-        self.model = model
-        self.processor = processor
+        self.lmm_cfg = lmm_cfg
+        self.interface = interface
 
-        self.model.requires_grad_(False)
-        self.model.gradient_checkpointing_enable()
+        self.interface.requires_grad_(False)
+        if hasattr(self.interface.model, "gradient_checkpointing_enable"):
+            self.interface.model.gradient_checkpointing_enable()
 
         self.icv_model = LearnableICVInterventionLMM(
-            model,
-            module_cfg.lmm.intervention_layer,
-            module_cfg.lmm.layer_format,
-            module_cfg.lmm.total_layers,
+            interface,
+            self.lmm_cfg.intervention_layer,
+            self.lmm_cfg.layer_format,
+            self.lmm_cfg.total_layers,
         )
 
         icv_encoder_factor: GlobalICVEncoder = hydra.utils.instantiate(
             module_cfg.icv_encoder, _partial_=True
         )
         icv_layer_num = len(self.icv_model.intervention_layer_names)
-        hidden_dim = self.model.config.hidden_size
+        hidden_dim = self.lmm_cfg.hidden_size
         self.icv_encoder = icv_encoder_factor(
             lmm_hidden_dim=hidden_dim, lmm_layers=icv_layer_num
         )
@@ -69,7 +68,7 @@ class VQAICVModule(pl.LightningModule):
 
     def forward(
         self,
-        query_input,
+        query_inputs,
         inputs,
         query_x_length,
         in_context_length,
@@ -80,10 +79,8 @@ class VQAICVModule(pl.LightningModule):
         query_input: bs, query_seq_len
         inputs: bs, ice_seq_len + query_seq_len,
         """
-        # - 1 为了去除query中的bos
-        original_mask_length = query_x_length + in_context_length - 1
-        original_mask = self.get_mask(inputs, original_mask_length)
-        query_mask = self.get_mask(query_input, query_x_length)
+        icl_context_mask = self.get_mask(inputs, in_context_length)
+        zero_shot_mask = self.get_mask(query_inputs, query_x_length)
 
         icv_encoder_output = self.icv_encoder()
 
@@ -93,10 +90,10 @@ class VQAICVModule(pl.LightningModule):
         )
 
         if self.module_cfg.hard_loss_weight:
-            query_input["labels"] = query_input["input_ids"]
+            query_inputs["labels"] = query_inputs["input_ids"]
 
         self.icv_model.toggle_intervention(True)
-        icv_outputs = self.icv_model(query_input, icv=icv)
+        icv_outputs = self.icv_model(query_inputs, icv=icv)
 
         if self.module_cfg.only_hard_loss:
             return {"loss": icv_outputs["loss"]}, icv_encoder_output
@@ -107,8 +104,8 @@ class VQAICVModule(pl.LightningModule):
 
         loss = 0.0
         kl_loss = self.calculate_kl_divergence(
-            icv_logits[query_mask].view(-1, icv_logits.shape[-1]),
-            ice_logits[original_mask].view(-1, ice_logits.shape[-1]),
+            icv_logits[zero_shot_mask].view(-1, icv_logits.shape[-1]),
+            ice_logits[icl_context_mask].view(-1, ice_logits.shape[-1]),
         )
         loss += kl_loss
 
@@ -135,14 +132,17 @@ class VQAICVModule(pl.LightningModule):
         ) * self.temperature**2
 
     def get_mask(self, inputs, mask_length):
-        mask_shape = inputs["input_ids"].shape
+        mask_shape = inputs[self.interface.input_ids_field_name].shape
         bs, seq_len = mask_shape
-        device = inputs["input_ids"].device
+        device = inputs[self.interface.input_ids_field_name].device
         sequence_indices = (
             torch.arange(seq_len, device=device).unsqueeze(0).expand(bs, -1)
         )
         mask = sequence_indices >= mask_length.unsqueeze(dim=1)
-        mask[inputs.input_ids == self.processor.tokenizer.pad_token_id] = False
+        mask[
+            inputs[self.interface.input_ids_field_name]
+            == self.interface.tokenizer.pad_token_id
+        ] = False
         return mask
 
     def decay_temperature(self):
@@ -160,7 +160,7 @@ class VQAICVModule(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         self.decay_temperature()
         loss_dict, icv_encoder_output = self(**batch)
-        self.log_dict(loss_dict, sync_dist=True)
+        self.log_dict(loss_dict, sync_dist=True, prog_bar=True)
         if self.module_cfg.log_alpha:
             alpha = icv_encoder_output.alpha.squeeze()
             for i in range(len(alpha)):
