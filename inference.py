@@ -27,12 +27,12 @@ from lmm_icl_interface import LMMPromptManager
 def main(cfg: DictConfig):
     logger.info(f"begin run: {cfg.run_name}")
     result_dir = Path(cfg.result_dir)
-    model_name = cfg.model_name
+    model_name = cfg.lmm.model_name
 
     save_dir, meta_info_dir, metric_file_path = get_inference_paths(
         result_dir=result_dir,
         model_name=model_name,
-        dataset_name=cfg.data_cfg.dataset.name,
+        dataset_name=cfg.data_cfg.task.datasets.name,
         run_name=cfg.run_name,
     )
 
@@ -53,11 +53,12 @@ def main(cfg: DictConfig):
 
     icv = None
     alpha = None
+    prompt_manager, interface, processor = init_interface(cfg)
     if cfg.test_icv:
         model_cpk_dir = get_icv_cpk_path(
             result_dir,
             model_name=model_name,
-            dataset_name=cfg.data_cfg.dataset.name,
+            dataset_name=cfg.data_cfg.task.datasets.name,
             run_name=cfg.run_name,
         )
         icv_cpk = torch.load(model_cpk_dir / "icv_cpk.pth")
@@ -67,7 +68,15 @@ def main(cfg: DictConfig):
         if icv_cpk.get("use_sigmoid", None):
             alpha = torch.sigmoid(alpha)
         logger.info("ICV loaded")
-
+        icv_model = LearnableICVInterventionLMM(
+            interface,
+            enable_intervention=True,
+            intervention_layer=lmm_args.intervention_layer,
+            layer_format=lmm_args.layer_format,
+            total_layers=lmm_args.total_layers,
+        )
+    else:
+        icv_model = LearnableICVInterventionLMM(interface, enable_intervention=False)
     split = "validation"
     base_info = f"{str(datetime.datetime.now())}-{cfg.test_num=}-"
     if cfg.test_icl:
@@ -81,14 +90,8 @@ def main(cfg: DictConfig):
     else:
         val_ds = ds
 
-    prompt_manager, interface, processor = init_interface(cfg)
     # model = model.to(cfg.device, torch.bfloat16)
-    icv_model = LearnableICVInterventionLMM(
-        interface,
-        lmm_args.intervention_layer,
-        lmm_args.layer_format,
-        lmm_args.total_layers,
-    )
+
     if cfg.test_num != -1:
         val_ds = val_ds.select(range(cfg.test_num))
 
@@ -134,8 +137,8 @@ def main(cfg: DictConfig):
             results_dict = icl_inference(
                 train_ds=train_ds,
                 val_ds=val_ds,
-                shot_num=shot_num,
-                icv_model=icv_model,
+                few_shot_num=shot_num,
+                model=icv_model,
                 prompt_manager=prompt_manager,
                 processor=processor,
                 bs=cfg.bs,
@@ -200,7 +203,7 @@ def icv_inference(
 
         generated = generate_answers(
             inputs=query_inputs,
-            icv_model=icv_model,
+            model=icv_model,
             processor=processor,
             generate_kwargs=generate_kwargs,
             in_context_vector=in_context_vector,
@@ -221,7 +224,7 @@ def icv_inference(
 @torch.inference_mode()
 def generate_answers(
     inputs,
-    icv_model,
+    model,
     processor,
     generate_kwargs,
     in_context_vector=None,
@@ -231,7 +234,7 @@ def generate_answers(
     if in_context_vector is not None:
         icv = alpha.unsqueeze(dim=-1) * in_context_vector
 
-    generated_out = icv_model.generate(inputs, generate_kwargs, icv=icv)
+    generated_out = model.generate(inputs, generate_kwargs, icv=icv)
     prompt_len = int(inputs["attention_mask"].shape[1])
     outputs = generated_out.tolist()
 
@@ -247,7 +250,7 @@ def icl_inference(
     train_ds,
     val_ds,
     few_shot_num,
-    icv_model: LearnableICVInterventionLMM,
+    model: LearnableICVInterventionLMM,
     prompt_manager: LMMPromptManager,
     processor,
     bs,
@@ -288,10 +291,10 @@ def icl_inference(
             )
 
         inputs = processor.prepare_input(prompts)
-        inputs = {k: v.to(icv_model.device) for k, v in inputs.items()}
+        inputs = {k: v.to(model.device) for k, v in inputs.items()}
         generated = generate_answers(
             inputs=inputs,
-            icv_model=icv_model,
+            model=model,
             processor=processor,
             generate_kwargs=generate_kwargs,
         )

@@ -1,6 +1,8 @@
 defaults:
   - _self_
   - data_cfg: icv_data
+  - lmm: idefics2-8B-base
+  - prompt: ${lmm}_${data_cfg/task}
 
 
 
