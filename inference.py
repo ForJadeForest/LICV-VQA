@@ -66,8 +66,8 @@ def main(cfg: DictConfig):
             run_name=cfg.run_name,
         )
         clip_path = cfg.clip_path
-        clip_icv_encoder = CLIPICVEncoder(llm_hidden_dim=4096,llm_layers=32, clip_path=clip_path)
-        clip_icv_encoder.load_weight(model_cpk_dir / "icv_cpk.bin")
+        clip_icv_encoder = CLIPICVEncoder(llm_hidden_dim=4096,llm_layers=32, clip_path=clip_path,clip_ft=False)
+        clip_icv_encoder.load_weight(model_cpk_dir / "icv_cpk.bin",load_clip =cfg.load_clip)
         alpha = clip_icv_encoder.alpha
         clip_icv_encoder.to(cfg.device)
         logger.info("ICV loaded")
@@ -78,7 +78,7 @@ def main(cfg: DictConfig):
         raise ValueError("no test mode")
     split = "validation"
     base_info = f"{str(datetime.datetime.now())}-{cfg.test_num=}-"
-    if cfg.test_icl:
+    if cfg.test_icl or cfg.test_clip_icv:
         split = None
 
     if cfg.data_cfg.dataset.name == "vqav2":
@@ -100,7 +100,7 @@ def main(cfg: DictConfig):
         post_process_fun = postprocess_ok_vqa_generation
     else:
         raise ValueError(f"{cfg.data_cfg.dataset.name=} error")
-    if cfg.test_icl:
+    if cfg.test_icl or cfg.test_clip_icv:
         val_ds = ds["validation"]
         train_ds = ds["train"]
     else:
@@ -149,9 +149,11 @@ def main(cfg: DictConfig):
     
     if cfg.test_clip_icv:
         results_dict = clip_icv_inference(
+            train_ds,
             val_ds,
             model,
             processor,
+            cfg.few_shot,
             cfg.bs,
             cfg.data_cfg.dataset.instruction,
             alpha=alpha,
@@ -349,9 +351,11 @@ def icl_inference(
 
 @torch.inference_mode()
 def clip_icv_inference(
+    train_ds,
     val_ds,
     model,
     processor,
+    few_shot_num = 32,
     bs=1,
     instruction="",
     alpha= None,
@@ -360,21 +364,30 @@ def clip_icv_inference(
 ):
     results_dict = {}
     index = 0
-    
+    ice_idx_list = []
+    ice_idx_sample_list = list(range(len(train_ds)))
+    for i in range(len(val_ds)):
+        ice_idx = random.sample(ice_idx_sample_list, few_shot_num)
+        ice_idx_list.append(ice_idx)
+        
     for batch in more_itertools.chunked(tqdm(val_ds, total=len(val_ds)), bs):
-        images = [sample["image"] for sample in batch]
+        images = []
         if instruction:
             prompts = [[instruction] for _ in range(bs)] #clip_input
             input_prompts = [[instruction] for _ in range(bs)] #ide_input
         else:
-            prompts = [[] for _ in range(bs)]
-            input_prompts = [[instruction] for _ in range(bs)] #ide_input
+            prompts = [[] for _ in range(bs)] #clip_input
+            input_prompts = [[] for _ in range(bs)] #ide_input
+        sub_ice_idx_list = ice_idx_list[index : index + bs]
         for i, sample in enumerate(batch):
-            prompts[i].extend(
-                [
-                    f"Question:{sample['question']} Short answer:",
-                ]
-            )
+            for ice_idx in sub_ice_idx_list[i]:
+                ice = train_ds[ice_idx]
+                images.append(ice["image"])
+                prompts[i].extend(
+                    [
+                        f"Question:{ice['question']} Short answer:{ice['answer']}",
+                    ]
+                )
             input_prompts[i].extend(
                 [
                     sample["image"],
@@ -383,7 +396,7 @@ def clip_icv_inference(
             )
         clip_data = VLM_processor(
                 text=prompts[0],
-                images=images[0],
+                images=images,
                 return_tensors="pt",
                 padding=True,
                 truncation=True,
