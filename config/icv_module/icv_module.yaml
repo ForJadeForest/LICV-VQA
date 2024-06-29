@@ -1,8 +1,8 @@
 defaults:
-  - icv_encoder: global_icv_encoder
+  - icv_encoder: clip_icv_encoder
 
-hard_loss_weight: 0.
-only_hard_loss: False
+hard_loss_weight: 0
+kl_loss: 1
 
 init_temperature: 1.
 decay_ratio: -1

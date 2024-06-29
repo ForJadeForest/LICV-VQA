@@ -10,6 +10,7 @@ class CLIPICVEncoder(BaseICVEncoder):
         self,
         llm_hidden_dim,
         llm_layers,
+        clip_ft,
         alpha_learnable=True,
         alpha_init_value=0.0,
         use_sigmoid=False,
@@ -19,7 +20,10 @@ class CLIPICVEncoder(BaseICVEncoder):
         super().__init__()
         self.clip_embed = CLIPModel.from_pretrained(clip_path)
         for param in self.clip_embed.parameters():
-            param.requires_grad = False
+            if clip_ft==True:
+              param.requires_grad = True
+            else:
+              param.requires_grad = False
         self.processor = CLIPProcessor.from_pretrained(clip_path)
         self.alpha = torch.nn.Parameter(
             torch.full(size=(1, llm_layers), fill_value=float(alpha_init_value)),
@@ -28,11 +32,6 @@ class CLIPICVEncoder(BaseICVEncoder):
         self.icv = nn.ModuleList(
             [torch.nn.Linear(512, llm_hidden_dim) for _ in range(llm_layers)]
         )
-
-        # 均值为0，标准差为0.01的正态分布
-        # self.icv = torch.nn.Linear(512,4096)
-
-        # torch.nn.init.normal_(self.icv, mean=0.0, std=0.01)
 
         self.use_sigmoid = use_sigmoid
 
@@ -69,3 +68,22 @@ class CLIPICVEncoder(BaseICVEncoder):
         if self.use_sigmoid:
             return torch.sigmoid(self.alpha)
         return self.alpha
+    
+    def load_weight(self,path,load_clip):
+        icv_weights = torch.load(path)
+        for i, layer in enumerate(self.icv):
+            layer_state_dict = {
+                        'weight': icv_weights[f'icv_encoder.icv.{i}.weight'],
+                        'bias': icv_weights[f'icv_encoder.icv.{i}.bias']
+                    }
+            layer.load_state_dict(layer_state_dict)
+        self.alpha = torch.nn.Parameter(icv_weights['icv_encoder.alpha'], requires_grad=True)
+        if load_clip==True:
+            new_state_dict = {}
+            for key, value in icv_weights.items():
+                new_key = key.replace('icv_encoder.clip_embed.', '')
+                if new_key in icv_weights:
+                    new_state_dict[new_key] = value
+            self.clip_embed.load_state_dict(new_state_dict, strict=False)
+        else:
+            pass
