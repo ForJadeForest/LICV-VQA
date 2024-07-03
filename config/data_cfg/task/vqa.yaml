@@ -2,3 +2,4 @@ defaults:
   - datasets: vqav2
 
 task_name: vqa
+instruction: ${prompt.instruction}

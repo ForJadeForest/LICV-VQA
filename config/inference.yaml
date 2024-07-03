@@ -8,7 +8,7 @@ defaults:
 
 test_icv: True
 test_icl: False
-bs: 4
+bs: 1
 test_num: -1
 few_shot_list: [1, 2, 4, 8, 16, 32]
 

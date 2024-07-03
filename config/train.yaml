@@ -2,7 +2,7 @@ defaults:
   - _self_
   - data_cfg: icv_data
   - icv_module: icv_module
-  - trainer: ddp
+  - trainer: zero2
   - lmm: idefics2-8B-base
   - prompt: ${lmm}_${data_cfg/task}
 

@@ -1,6 +1,6 @@
 accelerator: "gpu"
 devices: 4
-precision: "16-mixed"
+precision: "bf16-mixed"
 default_root_dir: "${result_dir}"
 strategy: "deepspeed_stage_2_offload"
 max_epochs: 10
