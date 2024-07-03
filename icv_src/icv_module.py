@@ -31,9 +31,10 @@ class VQAICVModule(pl.LightningModule):
 
         self.icv_model = LearnableICVInterventionLMM(
             interface,
-            self.lmm_cfg.intervention_layer,
-            self.lmm_cfg.layer_format,
-            self.lmm_cfg.total_layers,
+            enable_intervention=True,
+            intervention_layer=self.lmm_cfg.intervention_layer,
+            layer_format=self.lmm_cfg.layer_format,
+            total_layers=self.lmm_cfg.total_layers,
         )
 
         icv_encoder_factor: GlobalICVEncoder = hydra.utils.instantiate(

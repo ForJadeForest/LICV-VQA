@@ -71,9 +71,9 @@ def main(cfg: DictConfig):
         icv_model = LearnableICVInterventionLMM(
             interface,
             enable_intervention=True,
-            intervention_layer=lmm_args.intervention_layer,
-            layer_format=lmm_args.layer_format,
-            total_layers=lmm_args.total_layers,
+            intervention_layer=lmm_args["intervention_layer"],
+            layer_format=lmm_args["layer_format"],
+            total_layers=lmm_args["total_layers"],
         )
     else:
         icv_model = LearnableICVInterventionLMM(interface, enable_intervention=False)
@@ -120,8 +120,8 @@ def main(cfg: DictConfig):
                 }
             )
 
-        val_ques_path = cfg.data_cfg.dataset.val_ques_path
-        val_ann_path = cfg.data_cfg.dataset.val_ann_path
+        val_ques_path = cfg.data_cfg.task.datasets.val_ques_path
+        val_ann_path = cfg.data_cfg.task.datasets.val_ann_path
         acc = compute_vqa_accuracy(preds, val_ques_path, val_ann_path)
         logger.info(f"{cfg.run_name} ACC: {acc['overall']}")
         result_dict[base_info + "icv result"] = acc
@@ -156,8 +156,8 @@ def main(cfg: DictConfig):
                     }
                 )
 
-            val_ques_path = cfg.data_cfg.dataset.val_ques_path
-            val_ann_path = cfg.data_cfg.dataset.val_ann_path
+            val_ques_path = cfg.data_cfg.task.datasets.val_ques_path
+            val_ann_path = cfg.data_cfg.task.datasets.val_ann_path
             acc = compute_vqa_accuracy(preds, val_ques_path, val_ann_path)
             result_dict[base_info + f"shot{shot_num} result"] = acc
 
@@ -300,6 +300,7 @@ def icl_inference(
         )
 
         for i in range(len(batch)):
+            batch[i].pop("image")
             results_dict[index] = {"prediction": generated[i], **batch[i]}
             index += 1
 

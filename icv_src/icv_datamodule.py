@@ -34,7 +34,7 @@ class VQAICVDataModule(pl.LightningDataModule):
                     train_coco_dataset_root=self.data_cfg.task.datasets.train_coco_dataset_root,
                     val_coco_dataset_root=self.data_cfg.task.datasets.val_coco_dataset_root,
                     prompt_manager=self.prompt_manager,
-                    instruction=self.data_cfg.task.datasets.instruction,
+                    instruction=self.data_cfg.task.instruction,
                     few_shot_num=self.data_cfg.task.datasets.few_shot_num,
                     max_train_size=self.data_cfg.task.datasets.max_train_size,
                     split="train",

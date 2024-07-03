@@ -37,7 +37,7 @@ def main(cfg: DictConfig):
     save_path = get_icv_cpk_path(
         result_dir=cfg.result_dir,
         model_name=model_name,
-        dataset_name=cfg.data_cfg.task.task_name,
+        dataset_name=cfg.data_cfg.task.datasets.name,
         run_name=cfg.run_name,
     )
 

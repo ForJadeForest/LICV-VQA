@@ -1,6 +1,7 @@
 import re
 from contextlib import nullcontext
 from typing import List, Union
+from loguru import logger
 
 import torch.nn as nn
 from baukit import TraceDict
@@ -25,10 +26,14 @@ class LearnableICVInterventionLMM(nn.Module):
                 layer_format.replace("<LAYER_NUM>", str(layer))
                 for layer in self.intervention_layers
             ]
+            logger.info(
+                f"The intervention_layer_names is {self.intervention_layer_names}"
+            )
             self.layer_to_icv_index = {
-                layer_id: icv_idx
+                int(layer_id): int(icv_idx)
                 for layer_id, icv_idx in enumerate(self.intervention_layers)
             }
+            logger.info(f"The layer_to_icv_index is {self.layer_to_icv_index}")
             self.intervention_enabled = True
 
     def _prepare_layers(self, layers):
@@ -55,7 +60,7 @@ class LearnableICVInterventionLMM(nn.Module):
 
     def apply_icv_intervention(self, edit_layers, icv):
         def intervention_function(output, layer_name):
-            layer_idx = re.findall(r"\d+", layer_name)[0]
+            layer_idx = int(re.findall(r"\d+", layer_name)[0])
             if layer_name in edit_layers and isinstance(output, tuple):
                 hidden_states, *rest = output
                 shift = icv[:, self.layer_to_icv_index[layer_idx]].unsqueeze(dim=1)
@@ -66,6 +71,16 @@ class LearnableICVInterventionLMM(nn.Module):
                     * hidden_states.norm(dim=-1, keepdim=True)
                 )
                 return (normalized_states,) + tuple(rest)
+            elif layer_name in edit_layers:
+                hidden_states = output
+                shift = icv[:, self.layer_to_icv_index[layer_idx]].unsqueeze(dim=1)
+                shifted_states = hidden_states + shift
+                normalized_states = (
+                    shifted_states
+                    / shifted_states.norm(dim=-1, keepdim=True)
+                    * hidden_states.norm(dim=-1, keepdim=True)
+                )
+                return normalized_states
             return output
 
         return intervention_function
