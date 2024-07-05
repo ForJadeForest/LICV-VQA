@@ -11,6 +11,7 @@ class CLIPICVEncoder(BaseICVEncoder):
         llm_hidden_dim,
         llm_layers,
         clip_ft,
+        feature_mode,
         alpha_learnable=True,
         alpha_init_value=0.0,
         use_sigmoid=False,
@@ -29,11 +30,23 @@ class CLIPICVEncoder(BaseICVEncoder):
             torch.full(size=(1, llm_layers), fill_value=float(alpha_init_value)),
             requires_grad=alpha_learnable,
         )
-        self.icv = nn.ModuleList(
-            [torch.nn.Linear(512, llm_hidden_dim) for _ in range(llm_layers)]
+        self.feature_mode = feature_mode
+        if self.feature_mode == 4:
+            self.icv = nn.ModuleList(
+            [torch.nn.Linear(1024, llm_hidden_dim) for _ in range(llm_layers)]
         )
+        else:
+            self.icv = nn.ModuleList(
+                [torch.nn.Linear(512, llm_hidden_dim) for _ in range(llm_layers)]
+            )
         self.clip_ft = clip_ft
         self.use_sigmoid = use_sigmoid
+        if self.feature_mode == 2:
+            self.image_weight = torch.nn.Parameter(torch.full(size=(1, 32), fill_value=1/32, requires_grad=True))
+            self.text_weight = torch.nn.Parameter(torch.full(size=(1, 33), fill_value=1/32, requires_grad=True))
+        elif self.feature_mode == 3:
+            self.pca = PCA(n_components=1)
+        print("extractor mode:{}".format(self.feature_mode))
 
     def forward(self, data) -> ICVEncoderOutput:
         # len(data):batchsize
@@ -45,9 +58,7 @@ class CLIPICVEncoder(BaseICVEncoder):
             )
             icv = [
                 icv_layer(
-                    torch.mean(
-                        torch.mean(outs.text_embeds,dim=0,keepdim=True)+torch.mean(outs.image_embeds,dim=0,keepdim=True),
-                        dim=0,keepdim=True)
+                    self.feature_extractor(outs.text_embeds, outs.image_embeds,self.feature_mode)
                     )
                 for icv_layer in self.icv
             ]
@@ -82,32 +93,24 @@ class CLIPICVEncoder(BaseICVEncoder):
             self.clip_embed.load_state_dict(new_state_dict, strict=True)
         else:
             pass
-            
-def feature_extractor(text_feature, image_feature,mode):
-    if mode==1: ## Mean Aggregation
-        return torch.mean(
-                        torch.mean(text_feature,dim=0,keepdim=True)+torch.mean(image_feature,dim=0,keepdim=True),
-                        dim=0,keepdim=True)
-                    
-    elif mode==2: ## Weighted Average
-        ##todo
-        """
-        image_feature = 
-        text_feature =
-        self.image_weight = torch.nn.Parameter(torch.full(size=(1, 32),fill_value=1/32,
-            requires_grad=True)
-        self.text_weight = torch.nn.Parameter(torch.full(size=(1, 32),fill_value=1/32,
-            requires_grad=True)
-        image_feature = torch.mean(image_feature * self.image_weight, dim=0, keepdim=True)
-        text_feature = torch.mean(text_feature * self.text_weight, dim=0, keepdim=True)
-        return torch.mean(image_feature,text_feature,dim=0,keepdim=True)
-        """
-    
-    elif mode==3:##PCA
-        pca = PCA(n_components=1)
-        image_pca_result = pca.fit_transform(image_feature)
-        image_pca_vector = image_pca_result.components_[0]
-        text_pca_result = pca.fit_transform(text_feature)
-        text_pca_vector = text_pca_result.components_[0]
-        return torch.mean(image_pca_vector,text_pca_vector,dim=0,keepdim=True)
-    
+                
+    def feature_extractor(self, text_feature, image_feature,mode):
+        if mode==1: ## Mean Aggregation
+            return torch.mean(
+                            torch.mean(text_feature,dim=0,keepdim=True)+torch.mean(image_feature,dim=0,keepdim=True),
+                            dim=0,keepdim=True)
+                        
+        elif mode==2: ## Weighted Average
+            image_features = torch.mean(image_feature * self.image_weight.transpose(0,1), dim=0, keepdim=True)
+            text_features = torch.mean(text_feature * self.text_weight.transpose(0,1), dim=0, keepdim=True)
+            return torch.mean(image_features+text_features,dim=0,keepdim=True)
+        
+        elif mode==3:##PCA
+            image_pca_result = self.pca.fit_transform(image_feature)
+            image_pca_vector = image_pca_result.components_[0]
+            text_pca_result = self.pca.fit_transform(text_feature)
+            text_pca_vector = text_pca_result.components_[0]
+            return torch.mean(image_pca_vector,text_pca_vector,dim=0,keepdim=True)
+        
+        elif mode==4:##contact
+            return torch.cat([torch.mean(image_feature,dim=0,keepdim=True),torch.mean(text_feature,dim=0,keepdim=True)],dim=-1)
