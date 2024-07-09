@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 _target_: icv_src.icv_encoder.clip_icv_encoder.CLIPICVEncoder
 
 use_sigmoid: True
@@ -6,4 +7,14 @@ alpha_init_value: 0.
 embedding_name: clip
 clip_path: ""
 clip_ft: False
+=======
+_target_: icv_src.icv_encoder.clip_icv_encoder.CLIPICVEncoder
+
+use_sigmoid: True
+alpha_learnable: True
+alpha_init_value: 0.
+embedding_name: clip
+clip_path: ""
+clip_ft: False
+>>>>>>> 5fb5298bc4ae472c620f7b1c459e102bf1ddb7f2
 feature_mode: 2
