@@ -31,11 +31,7 @@ class CLIPICVEncoder(BaseICVEncoder):
             requires_grad=alpha_learnable,
         )
         self.feature_mode = feature_mode
-<<<<<<< HEAD
         if self.feature_mode == 4 or self.feature_mode == 5:
-=======
-        if self.feature_mode == 4:
->>>>>>> 5fb5298bc4ae472c620f7b1c459e102bf1ddb7f2
             self.icv = nn.ModuleList(
             [torch.nn.Linear(1024, llm_hidden_dim) for _ in range(llm_layers)]
         )
@@ -45,19 +41,11 @@ class CLIPICVEncoder(BaseICVEncoder):
             )
         self.clip_ft = clip_ft
         self.use_sigmoid = use_sigmoid
-<<<<<<< HEAD
         if self.feature_mode == 2 :
             self.image_weight = torch.nn.Parameter(torch.full(size=(1, 32), fill_value=1/32, requires_grad=True))
             self.text_weight = torch.nn.Parameter(torch.full(size=(1, 33), fill_value=1/32, requires_grad=True))
         elif self.feature_mode == 3:
             pass
-=======
-        if self.feature_mode == 2:
-            self.image_weight = torch.nn.Parameter(torch.full(size=(1, 32), fill_value=1/32, requires_grad=True))
-            self.text_weight = torch.nn.Parameter(torch.full(size=(1, 33), fill_value=1/32, requires_grad=True))
-        elif self.feature_mode == 3:
-            self.pca = PCA(n_components=1)
->>>>>>> 5fb5298bc4ae472c620f7b1c459e102bf1ddb7f2
         print("extractor mode:{}".format(self.feature_mode))
 
     def forward(self, data) -> ICVEncoderOutput:
@@ -70,11 +58,7 @@ class CLIPICVEncoder(BaseICVEncoder):
             )
             icv = [
                 icv_layer(
-<<<<<<< HEAD
                     self.feature_extractor(outs.text_embeds, outs.image_embeds,self.feature_mode).to(icv_layer.weight.dtype)
-=======
-                    self.feature_extractor(outs.text_embeds, outs.image_embeds,self.feature_mode)
->>>>>>> 5fb5298bc4ae472c620f7b1c459e102bf1ddb7f2
                     )
                 for icv_layer in self.icv
             ]
@@ -109,10 +93,6 @@ class CLIPICVEncoder(BaseICVEncoder):
                         'bias': icv_weights[f'icv_encoder.icv.{i}.bias']
                     }
             layer.load_state_dict(layer_state_dict)
-<<<<<<< HEAD
-=======
-        self.alpha = torch.nn.Parameter(icv_weights['icv_encoder.alpha'], requires_grad=True)
->>>>>>> 5fb5298bc4ae472c620f7b1c459e102bf1ddb7f2
         if icv_weights["clip_ft"] == True:
             new_state_dict = {}
             for key, value in icv_weights.items():
@@ -135,7 +115,6 @@ class CLIPICVEncoder(BaseICVEncoder):
             return torch.mean(image_features+text_features,dim=0,keepdim=True)
         
         elif mode==3:##PCA
-<<<<<<< HEAD
             image_pca_result = torch_PCA(image_feature,1)
             text_pca_result = torch_PCA(text_feature,1)
             return torch.mean(image_pca_result+text_pca_result,dim=0,keepdim=True)
@@ -147,13 +126,3 @@ class CLIPICVEncoder(BaseICVEncoder):
             image_pca_result = torch_PCA(image_feature,1)
             text_pca_result = torch_PCA(text_feature,1)
             return torch.cat([image_pca_result,text_pca_result],dim=-1)
-=======
-            image_pca_result = self.pca.fit_transform(image_feature)
-            image_pca_vector = image_pca_result.components_[0]
-            text_pca_result = self.pca.fit_transform(text_feature)
-            text_pca_vector = text_pca_result.components_[0]
-            return torch.mean(image_pca_vector,text_pca_vector,dim=0,keepdim=True)
-        
-        elif mode==4:##contact
-            return torch.cat([torch.mean(image_feature,dim=0,keepdim=True),torch.mean(text_feature,dim=0,keepdim=True)],dim=-1)
->>>>>>> 5fb5298bc4ae472c620f7b1c459e102bf1ddb7f2
