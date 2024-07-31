@@ -10,6 +10,10 @@ pip install -r requirments.txt
 # For Openflamingo, please use transformers==4.28.1 [beta]
 
 pip install transformers==4.28.1
+
+pip install https://github.com/ForJadeForest/lmm_icl_interface.git
+
+pip install -e ./lmm_icl_interface
 ```
 
 
