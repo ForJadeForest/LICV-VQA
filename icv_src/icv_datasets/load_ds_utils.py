@@ -1,5 +1,6 @@
 import os
 import datasets
+from datasets import DatasetDict
 import json
 from pathlib import Path
 
@@ -213,7 +214,6 @@ def load_vizwiz_ds(
             }
         )
 
-
     def train_trans(x, idx):
         img_path = [str(root_dir / "train" / f_n) for f_n in x["image"]]
 
@@ -241,4 +241,41 @@ def load_vizwiz_ds(
     elif split == "validation":
         ds = ds.map(val_trans, batched=True, with_indices=True, num_proc=12)
     ds = ds.cast_column("image", datasets.Image(decode=True))
+    return ds
+
+
+def load_coco_ds(
+    train_coco_dataset_root,
+    train_coco_annotation_file,
+    val_coco_dataset_root,
+    val_coco_annotation_file,
+    split=None,
+):
+    from .coco_dataset import CocoDataset
+
+    if split is None:
+        train_ds = CocoDataset(
+            train_coco_dataset_root,
+            train_coco_annotation_file,
+        )
+        val_ds = CocoDataset(val_coco_dataset_root, val_coco_annotation_file)
+        train_ds = datasets.Dataset.from_list(train_ds)
+        val_ds = datasets.Dataset.from_list(val_ds)
+        ds = DatasetDict({"train": train_ds, "validation": val_ds})
+        ds = ds.sort("image_id")
+        ds = ds.cast_column("image", datasets.Image(decode=True))
+    else:
+        if split == "train":
+            ds = CocoDataset(
+                train_coco_dataset_root,
+                train_coco_annotation_file,
+            )
+        elif split == "validation":
+            ds = CocoDataset(
+                val_coco_dataset_root,
+                val_coco_annotation_file,
+            )
+        ds = datasets.Dataset.from_list(ds)
+        ds = ds.sort("image_id")
+        ds = ds.cast_column("image", datasets.Image(decode=True))
     return ds
