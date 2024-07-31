@@ -5,7 +5,7 @@ from torch.utils.data import DataLoader
 
 from lmm_icl_interface import LMMPromptManager, LMMPromptProcessor
 
-from .icv_datasets.vqa_dataset import VQAV2Dataset
+from .icv_datasets.vqa_dataset import VQADataset
 
 
 class VQAICVDataModule(pl.LightningDataModule):
@@ -28,7 +28,7 @@ class VQAICVDataModule(pl.LightningDataModule):
     def setup(self, stage: str) -> None:
         if stage == "fit":
             if self.data_cfg.task.task_name == "vqa":
-                self.train_ds = VQAV2Dataset(
+                self.train_ds = VQADataset(
                     name=self.data_cfg.task.datasets.name,
                     root_dir=self.data_cfg.task.datasets.root_dir,
                     train_coco_dataset_root=self.data_cfg.task.datasets.train_coco_dataset_root,
