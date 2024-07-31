@@ -1,0 +1,4 @@
+defaults:
+  - datasets: mscoco2017
+
+task_name: caption

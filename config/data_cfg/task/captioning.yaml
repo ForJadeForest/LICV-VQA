@@ -1,4 +1,0 @@
-defaults:
-  - captioning_ds: mscoco2017
-
-task_name: captioning
