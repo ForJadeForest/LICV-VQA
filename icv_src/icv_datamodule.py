@@ -6,6 +6,7 @@ from torch.utils.data import DataLoader
 from lmm_icl_interface import LMMPromptManager, LMMPromptProcessor
 
 from .icv_datasets.vqa_dataset import VQADataset
+from .icv_datasets.caption_dataset import CaptionDataset
 
 
 class VQAICVDataModule(pl.LightningDataModule):
@@ -42,6 +43,20 @@ class VQAICVDataModule(pl.LightningDataModule):
                         self.data_cfg.task.datasets, "val_ann_file", None
                     ),
                     filter_ques_type=self.data_cfg.task.datasets.filter_ques_type,
+                    select_from_query=self.data_cfg.task.datasets.select_from_query,
+                )
+            elif self.data_cfg.task.task_name == "caption":
+                self.train_ds = CaptionDataset(
+                    name=self.data_cfg.task.datasets.name,
+                    train_coco_dataset_root=self.data_cfg.task.datasets.train_coco_dataset_root,
+                    val_coco_dataset_root=self.data_cfg.task.datasets.val_coco_dataset_root,
+                    train_coco_annotation_file=self.data_cfg.task.datasets.train_coco_annotation_file,
+                    val_coco_annotation_file=self.data_cfg.task.datasets.val_coco_annotation_file,
+                    prompt_manager=self.prompt_manager,
+                    instruction=self.data_cfg.task.instruction,
+                    few_shot_num=self.data_cfg.task.datasets.few_shot_num,
+                    max_train_size=self.data_cfg.task.datasets.max_train_size,
+                    split="train",
                     select_from_query=self.data_cfg.task.datasets.select_from_query,
                 )
 
