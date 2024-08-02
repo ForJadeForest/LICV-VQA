@@ -24,56 +24,137 @@ from pytorch_lightning.utilities.deepspeed import (
     convert_zero_checkpoint_to_fp32_state_dict,
 )
 from torch import nn, optim
-from torch.utils.data import DataLoader
-from transformers import IdeficsProcessor, get_cosine_schedule_with_warmup
+from torch.utils.data import DataLoader, Dataset
+from transformers import (
+    IdeficsProcessor,
+    get_cosine_schedule_with_warmup,
+    IdeficsForVisionText2Text,
+)
 
-from icv_src.icv_datamodule import VQAICVDataModule
-from icv_src.icv_datasets.load_ds_utils import load_okvqa_ds, load_vqav2_ds
-from icv_src.icv_model.icv_idefics import ICVIdeficsForVisionText2Text
-from icv_src.icv_module import VQAICVModule
+
+from icv_src.icv_datasets.load_ds_utils import (
+    load_coco_ds,
+    load_okvqa_ds,
+    load_vqav2_ds,
+)
+
+from lmm_icl_interface import (
+    LMMPromptManager,
+    LMMPromptProcessor,
+    Idefics2PromptProcessor,
+)
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
-class VQADataset(nn.Module):
-    def __init__(self, data_cfg):
+class VQADataset(Dataset):
+    def __init__(
+        self,
+        name,
+        root_dir,
+        train_coco_dataset_root,
+        val_coco_dataset_root,
+        prompt_manager: LMMPromptManager,
+        max_train_size=10000,
+        split="train",
+        val_ann_file=None,
+    ):
         super().__init__()
-        self.data_cfg = data_cfg
-        if self.data_cfg.dataset.name == "vqav2":
-            self.ds = load_vqav2_ds(
-                root_dir=self.data_cfg.dataset.root_dir,
-                train_coco_dataset_root=self.data_cfg.dataset.train_coco_dataset_root,
-                val_coco_dataset_root=self.data_cfg.dataset.val_coco_dataset_root,
-                split="train",
+        self.prompt_manager = prompt_manager
+        if name == "vqav2":
+            ds = load_vqav2_ds(
+                root_dir,
+                train_coco_dataset_root,
+                val_coco_dataset_root,
+                split=split,
+                val_ann_file=val_ann_file,
             )
-        elif self.data_cfg.dataset.name == "okvqa":
-            self.ds = load_okvqa_ds(
-                root_dir=self.data_cfg.dataset.root_dir,
-                train_coco_dataset_root=self.data_cfg.dataset.train_coco_dataset_root,
-                val_coco_dataset_root=self.data_cfg.dataset.val_coco_dataset_root,
-                split="train",
+        elif name == "okvqa":
+            ds = load_okvqa_ds(
+                root_dir,
+                train_coco_dataset_root,
+                val_coco_dataset_root,
+                split=split,
             )
-        max_train_size = self.data_cfg.dataset.max_train_size
-        if max_train_size > 0 and len(self.ds) > max_train_size:
-            random_select_idx = np.random.randint(0, len(self.ds), size=max_train_size)
-            self.ds = self.ds.select(random_select_idx)
+        self.query_ds = ds
+        if max_train_size > 0 and len(self.query_ds) > max_train_size:
+            random_select_idx = np.random.choice(
+                len(self.query_ds), size=max_train_size, replace=False
+            )
+            self.query_ds = self.query_ds.select(random_select_idx)
 
     def __len__(self):
-        return len(self.ds)
+        return len(self.query_ds)
 
     def __getitem__(self, index):
-        item = self.ds[index]
+        query_item = self.query_ds[index]
+
         query_prompt = [
-            item["image"],
-            f"Question:{item['question']} Short answer:{item['answer']}",
+            query_item["image"],
+            self.prompt_manager.gen_ice_text_with_label(
+                query_item, add_sep_token=False
+            ),
         ]
-        prompt_x = [
-            item["image"],
-            f"Question:{item['question']} Short answer:",
+
+        query_x = [
+            query_item["image"],
+            self.prompt_manager.gen_query_text_without_label(query_item),
         ]
         return {
             "prompt": query_prompt,
-            "prompt_x": prompt_x,
+            "prompt_x": query_x,
+        }
+
+
+class CaptionDataset(Dataset):
+    def __init__(
+        self,
+        name,
+        train_coco_dataset_root,
+        val_coco_dataset_root,
+        train_coco_annotation_file,
+        val_coco_annotation_file,
+        prompt_manager: LMMPromptManager,
+        max_train_size=8000,
+        split="train",
+    ):
+        super().__init__()
+        self.prompt_manager = prompt_manager
+        if name == "coco2017":
+            ds = load_coco_ds(
+                train_coco_dataset_root=train_coco_dataset_root,
+                train_coco_annotation_file=train_coco_annotation_file,
+                val_coco_dataset_root=val_coco_dataset_root,
+                val_coco_annotation_file=val_coco_annotation_file,
+                split=split,
+            )
+        self.query_ds = ds
+
+        if max_train_size > 0 and len(self.query_ds) > max_train_size:
+            random_select_idx = np.random.choice(
+                len(self.query_ds), size=max_train_size, replace=False
+            )
+            self.query_ds = self.query_ds.select(random_select_idx)
+
+    def __len__(self):
+        return len(self.query_ds)
+
+    def __getitem__(self, index):
+        query_item = self.query_ds[index]
+        query_prompt = [
+            query_item["image"],
+            self.prompt_manager.gen_ice_text_with_label(
+                query_item, add_sep_token=False
+            ),
+        ]
+
+        query_x = [
+            query_item["image"],
+            self.prompt_manager.gen_query_text_without_label(query_item),
+        ]
+        return {
+            "prompt": query_prompt,
+            "prompt_x": query_x,
         }
 
 
@@ -91,7 +172,30 @@ class FTVQADataModule(pl.LightningDataModule):
 
     def setup(self, stage: str) -> None:
         if stage == "fit":
-            self.train_ds = VQADataset(self.data_cfg)
+            if self.data_cfg.task.task_name == "vqa":
+                self.train_ds = VQADataset(
+                    name=self.data_cfg.task.datasets.name,
+                    root_dir=self.data_cfg.task.datasets.root_dir,
+                    train_coco_dataset_root=self.data_cfg.task.datasets.train_coco_dataset_root,
+                    val_coco_dataset_root=self.data_cfg.task.datasets.val_coco_dataset_root,
+                    prompt_manager=self.prompt_manager,
+                    max_train_size=self.data_cfg.task.datasets.max_train_size,
+                    split="train",
+                    val_ann_file=getattr(
+                        self.data_cfg.task.datasets, "val_ann_file", None
+                    ),
+                )
+            elif self.data_cfg.task.task_name == "caption":
+                self.train_ds = CaptionDataset(
+                    name=self.data_cfg.task.datasets.name,
+                    train_coco_dataset_root=self.data_cfg.task.datasets.train_coco_dataset_root,
+                    val_coco_dataset_root=self.data_cfg.task.datasets.val_coco_dataset_root,
+                    train_coco_annotation_file=self.data_cfg.task.datasets.train_coco_annotation_file,
+                    val_coco_annotation_file=self.data_cfg.task.datasets.val_coco_annotation_file,
+                    prompt_manager=self.prompt_manager,
+                    max_train_size=self.data_cfg.task.datasets.max_train_size,
+                    split="train",
+                )
 
     def train_dataloader(self):
         return DataLoader(
@@ -102,20 +206,30 @@ class FTVQADataModule(pl.LightningDataModule):
         )
 
 
-def collator_data(data_list, processor):
+def collator_data(data_list, prompt_processor: LMMPromptProcessor):
     sample = data_list[0]
     data_dict = {k: [d[k] for d in data_list] for k in sample.keys()}
-    prompt = data_dict["prompt"]
-    query_x = processor(
-        data_dict["prompt_x"], return_tensors="pt", padding=True, truncation=True
+    query_prompt = data_dict["query_prompt"]
+    query_x = data_dict["query_x"]
+
+    query_input = prompt_processor.prepare_input(
+        query_prompt,
+        padding=True,
+        truncation=True,
+        add_eos_token=True,
     )
-    query_x_length = (query_x["input_ids"] != processor.tokenizer.pad_token_id).sum(
-        dim=1
+    query_x = prompt_processor.prepare_input(
+        query_x, return_tensors="pt", padding=True, truncation=True
     )
-    inputs = processor(
-        prompt, return_tensors="pt", padding=True, truncation=True, add_eos_token=True
-    )
-    return {"inputs": inputs, "query_x_length": query_x_length}
+
+    query_x_length = (
+        query_x[prompt_processor.input_ids_field]
+        != prompt_processor.tokenizer.pad_token_id
+    ).sum(dim=1)
+    return {
+        "inputs": query_input,
+        "query_x_length": query_x_length,
+    }
 
 
 class FTVQAModule(pl.LightningModule):
@@ -225,8 +339,8 @@ def main(cfg: DictConfig):
         **cfg.trainer,
     )
 
-    model = ICVIdeficsForVisionText2Text.from_pretrained(cfg.model_name_or_path)
-    processor = IdeficsProcessor.from_pretrained(cfg.model_name_or_path)
+    model = IdeficsForVisionText2Text.from_pretrained(cfg.model_name_or_path)
+    processor = Idefics2PromptProcessor(cfg.model_name_or_path)
     processor.tokenizer.padding_side = "right"
     if cfg.lora_qkv:
         target_modules = ["q_proj", "v_proj", "k_proj"]
