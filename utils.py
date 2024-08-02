@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from icv_src.icv_datasets.vqa_dataset import load_okvqa_ds, load_vqav2_ds
+from icv_src.icv_datasets.caption_dataset import load_coco_ds
 from icv_src.metrics import (
     postprocess_ok_vqa_generation,
     postprocess_vqa_generation,
@@ -88,7 +89,7 @@ def init_dataset(cfg, split):
             split,
             val_ann_file=cfg.data_cfg.task.datasets.val_ann_path,
         )
-        post_process_fun = postprocess_vqa_generation
+        post_process_fun = vqa_postprocess
     elif cfg.data_cfg.task.datasets.name == "okvqa":
         ds = load_okvqa_ds(
             cfg.data_cfg.task.datasets.root_dir,
@@ -96,7 +97,37 @@ def init_dataset(cfg, split):
             cfg.data_cfg.task.datasets.val_coco_dataset_root,
             split,
         )
-        post_process_fun = postprocess_ok_vqa_generation
+        post_process_fun = ok_vq_postprocess
+    elif cfg.data_cfg.task.datasets.name == "coco2017":
+        ds = load_coco_ds(
+            train_coco_dataset_root=cfg.data_cfg.task.datasets.train_coco_dataset_root,
+            val_coco_dataset_root=cfg.data_cfg.task.datasets.val_coco_dataset_root,
+            train_coco_annotation_file=cfg.data_cfg.task.datasets.train_coco_annotation_file,
+            val_coco_annotation_file=cfg.data_cfg.task.datasets.val_coco_annotation_file,
+            split=split,
+        )
+        post_process_fun = caption_postprocess
     else:
         raise ValueError(f"{cfg.data_cfg.task.datasets.name=} error")
     return ds, post_process_fun
+
+
+def caption_postprocess(text, model_name):
+    if "flamingo" in model_name:
+        return text.split("Output", 1)[0].replace('"', "").strip()
+    elif "idefics" in model_name:
+        return text.split("Caption", 1)[0].replace('"', "").replace("\n", "").strip()
+
+
+def vqa_postprocess(text, model_name):
+    if "flamingo" in model_name:
+        return postprocess_vqa_generation(text).strip()
+    elif "idefics" in model_name:
+        return postprocess_vqa_generation(text).replace("\n", "").strip()
+
+
+def ok_vq_postprocess(text, model_name):
+    if "flamingo" in model_name:
+        return postprocess_ok_vqa_generation(text).strip()
+    elif "idefics" in model_name:
+        return postprocess_ok_vqa_generation(text).replace("\n", "").strip()
