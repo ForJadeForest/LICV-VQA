@@ -2,3 +2,4 @@ defaults:
   - datasets: mscoco2017
 
 task_name: caption
+instruction: ${prompt.instruction}
