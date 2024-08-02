@@ -10,17 +10,47 @@ from dotenv import load_dotenv
 from loguru import logger
 from omegaconf import DictConfig
 from tqdm import tqdm
-from transformers import IdeficsProcessor, IdeficsForVisionText2Text
 
-from icv_src.icv_datasets.vqa_dataset import load_okvqa_ds, load_vqav2_ds
 from icv_src.icv_model.icv_intervention import LearnableICVInterventionLMM
-from icv_src.metrics import (
-    compute_vqa_accuracy,
-    postprocess_ok_vqa_generation,
-    postprocess_vqa_generation,
-)
-from utils import get_icv_cpk_path, get_inference_paths, init_interface, init_dataset
+from icv_src.metrics import compute_cider, compute_vqa_accuracy
 from lmm_icl_interface import LMMPromptManager
+from utils import get_icv_cpk_path, get_inference_paths, init_dataset, init_interface
+
+
+def evaluate_caption(results_dict, model_name, val_ann_path, post_process_fun):
+    pred_coco = []
+    for idx in results_dict:
+        pred_coco.append(
+            {
+                "image_id": results_dict[idx]["image_id"],
+                "caption": post_process_fun(
+                    results_dict[idx]["prediction"], model_name
+                ),
+            }
+        )
+    cider_score = compute_cider(pred_coco, val_ann_path)
+    return cider_score * 100
+
+
+def evaluate_vqa(
+    results_dict,
+    model_name,
+    val_ques_path,
+    val_ann_path,
+    post_process_fun,
+):
+    preds = []
+    for idx in results_dict:
+        preds.append(
+            {
+                "answer": post_process_fun(results_dict[idx]["prediction"], model_name)
+                .replace("\n", "")
+                .strip(),
+                "question_id": results_dict[idx]["question_id"],
+            }
+        )
+    acc = compute_vqa_accuracy(preds, val_ques_path, val_ann_path)
+    return acc
 
 
 @hydra.main(config_path="config", config_name="inference.yaml")
@@ -90,8 +120,6 @@ def main(cfg: DictConfig):
     else:
         val_ds = ds
 
-    # model = model.to(cfg.device, torch.bfloat16)
-
     if cfg.test_num != -1:
         val_ds = val_ds.select(range(cfg.test_num))
 
@@ -109,22 +137,26 @@ def main(cfg: DictConfig):
             in_context_vector=icv,
             alpha=alpha,
         )
-        preds = []
-        for idx in results_dict:
-            preds.append(
-                {
-                    "answer": post_process_fun(results_dict[idx]["prediction"])
-                    .replace("\n", "")
-                    .strip(),
-                    "question_id": results_dict[idx]["question_id"],
-                }
+        if cfg.data_cfg.task.task_name == "vqa":
+            acc = evaluate_vqa(
+                results_dict,
+                cfg.lmm.name,
+                cfg.data_cfg.task.datasets.val_ques_path,
+                cfg.data_cfg.task.datasets.val_ann_path,
+                post_process_fun,
             )
+            logger.info(f"{cfg.run_name} ACC: {acc['overall']}")
+            result_dict[base_info + "icv result"] = acc
+        elif cfg.data_cfg.task.task_name == "caption":
+            cider = evaluate_caption(
+                results_dict,
+                cfg.lmm.name,
+                cfg.data_cfg.task.datasets.val_coco_annotation_file,
+                post_process_fun,
+            )
+            logger.info(f"{cfg.run_name} CIDEr: {cider}")
 
-        val_ques_path = cfg.data_cfg.task.datasets.val_ques_path
-        val_ann_path = cfg.data_cfg.task.datasets.val_ann_path
-        acc = compute_vqa_accuracy(preds, val_ques_path, val_ann_path)
-        logger.info(f"{cfg.run_name} ACC: {acc['overall']}")
-        result_dict[base_info + "icv result"] = acc
+            result_dict[base_info + "icv result"] = cider
         with open(metric_file_path, "w") as f:
             json.dump(result_dict, f, indent=4)
         with open(meta_info_dir / f"{base_info}icv.json", "w") as f:
@@ -145,21 +177,26 @@ def main(cfg: DictConfig):
                 generate_kwargs=cfg.generate_kwargs,
                 instruction=cfg.prompt.instruction,
             )
-            preds = []
-            for idx in results_dict:
-                preds.append(
-                    {
-                        "answer": post_process_fun(results_dict[idx]["prediction"])
-                        .replace("\n", "")
-                        .strip(),
-                        "question_id": results_dict[idx]["question_id"],
-                    }
+            if cfg.data_cfg.task.task_name == "vqa":
+                acc = evaluate_vqa(
+                    results_dict,
+                    cfg.lmm.name,
+                    cfg.data_cfg.task.datasets.val_ques_path,
+                    cfg.data_cfg.task.datasets.val_ann_path,
+                    post_process_fun,
                 )
+                logger.info(f"{cfg.run_name} ACC: {acc['overall']}")
+                result_dict[base_info + "icv result"] = acc
+            elif cfg.data_cfg.task.task_name == "caption":
+                cider = evaluate_caption(
+                    results_dict,
+                    cfg.lmm.name,
+                    cfg.data_cfg.task.datasets.val_coco_annotation_file,
+                    post_process_fun,
+                )
+                logger.info(f"{cfg.run_name} CIDEr: {cider}")
 
-            val_ques_path = cfg.data_cfg.task.datasets.val_ques_path
-            val_ann_path = cfg.data_cfg.task.datasets.val_ann_path
-            acc = compute_vqa_accuracy(preds, val_ques_path, val_ann_path)
-            result_dict[base_info + f"shot{shot_num} result"] = acc
+                result_dict[base_info + "icv result"] = cider
 
             with open(metric_file_path, "w") as f:
                 json.dump(result_dict, f, indent=4)
