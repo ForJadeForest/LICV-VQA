@@ -1,5 +1,6 @@
 import datetime
 import json
+import os
 import random
 from pathlib import Path
 
@@ -164,12 +165,40 @@ def main(cfg: DictConfig):
 
     if cfg.test_icl:
         icv_model.toggle_intervention(False)
+        if cfg.use_rice:
+            if not os.path.exists(os.path.join(cfg.result_dir, "cache")):
+                os.makedirs(os.path.join(cfg.result_dir, "cache"))
+            from icv_src.utils.mm_topk_retriver import MMTopkRetriever
+
+            base_info += "-RICE"
+            rice_retriever = MMTopkRetriever(
+                index_ds=train_ds,
+                test_ds=val_ds,
+                index_field="image",
+                mode="i2i",
+                batch_size=8,
+                num_workers=4,
+                cache_file=os.path.join(
+                    cfg.result_dir,
+                    "cache",
+                    f"{cfg.data_cfg.task.datasets.name}_{cfg.test_num}_rice_imgemb.pkl",
+                ),
+                device=icv_model.device,
+            )
         for shot_num in cfg.few_shot_list:
+            if cfg.use_rice:
+                ice_idx_list = rice_retriever.retrieve(shot_num)
+            else:
+                ice_idx_list = []
+                ice_idx_sample_list = list(range(len(train_ds)))
+                for i in range(len(val_ds)):
+                    ice_idx = random.sample(ice_idx_sample_list, shot_num)
+                    ice_idx_list.append(ice_idx)
 
             results_dict = icl_inference(
                 train_ds=train_ds,
                 val_ds=val_ds,
-                few_shot_num=shot_num,
+                ice_idx_list=ice_idx_list,
                 model=icv_model,
                 prompt_manager=prompt_manager,
                 processor=processor,
@@ -186,7 +215,7 @@ def main(cfg: DictConfig):
                     post_process_fun,
                 )
                 logger.info(f"{cfg.run_name} ACC: {acc['overall']}")
-                result_dict[base_info + "icv result"] = acc
+                result_dict[base_info + "ICL result"] = acc
             elif cfg.data_cfg.task.task_name == "caption":
                 cider = evaluate_caption(
                     results_dict,
@@ -196,7 +225,7 @@ def main(cfg: DictConfig):
                 )
                 logger.info(f"{cfg.run_name} CIDEr: {cider}")
 
-                result_dict[base_info + "icv result"] = cider
+                result_dict[base_info + "ICL result"] = cider
 
             with open(metric_file_path, "w") as f:
                 json.dump(result_dict, f, indent=4)
@@ -286,7 +315,7 @@ def generate_answers(
 def icl_inference(
     train_ds,
     val_ds,
-    few_shot_num,
+    ice_idx_list,
     model: LearnableICVInterventionLMM,
     prompt_manager: LMMPromptManager,
     processor,
@@ -297,11 +326,6 @@ def icl_inference(
     results_dict = {}
 
     index = 0
-    ice_idx_list = []
-    ice_idx_sample_list = list(range(len(train_ds)))
-    for i in range(len(val_ds)):
-        ice_idx = random.sample(ice_idx_sample_list, few_shot_num)
-        ice_idx_list.append(ice_idx)
 
     for batch in more_itertools.chunked(tqdm(val_ds, total=len(val_ds)), bs):
         if instruction:
