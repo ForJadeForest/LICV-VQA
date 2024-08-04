@@ -188,6 +188,9 @@ def main(cfg: DictConfig):
         for shot_num in cfg.few_shot_list:
             if cfg.use_rice:
                 ice_idx_list = rice_retriever.retrieve(shot_num)
+            elif cfg.ice_idx_list_cache is not None:
+                # A List[List]
+                ice_idx_list = json.load(open(cfg.ice_idx_list_cache))
             else:
                 ice_idx_list = []
                 ice_idx_sample_list = list(range(len(train_ds)))

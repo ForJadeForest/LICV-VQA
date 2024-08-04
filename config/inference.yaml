@@ -20,7 +20,7 @@ re_eval: False
 model_cpk_dir: ${oc.env:MODEL_CPK_DIR}
 model_name: "${icv_module.lmm.model_name}"
 use_rice: false
-
+ice_idx_list_cache: null
 
 generate_kwargs:
   max_new_tokens: 5
