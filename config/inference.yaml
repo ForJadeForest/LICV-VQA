@@ -10,7 +10,7 @@ test_icv: True
 test_icl: False
 bs: 1
 test_num: -1
-few_shot_list: [1, 2, 4, 8, 16, 32]
+few_shot_list: [1, 4, 8, 16, 32]
 
 run_name: debug
 result_dir: ${oc.env:RESULT_DIR}

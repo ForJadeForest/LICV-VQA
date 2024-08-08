@@ -218,7 +218,7 @@ def main(cfg: DictConfig):
                     post_process_fun,
                 )
                 logger.info(f"{cfg.run_name} ACC: {acc['overall']}")
-                result_dict[base_info + "ICL result"] = acc
+                result_dict[base_info + f"ICL shot_num: {shot_num} ACC result"] = acc
             elif cfg.data_cfg.task.task_name == "caption":
                 cider = evaluate_caption(
                     results_dict,
@@ -228,7 +228,9 @@ def main(cfg: DictConfig):
                 )
                 logger.info(f"{cfg.run_name} CIDEr: {cider}")
 
-                result_dict[base_info + "ICL result"] = cider
+                result_dict[base_info + f"ICL shot_num: {shot_num} CIDEr result"] = (
+                    cider
+                )
 
             with open(metric_file_path, "w") as f:
                 json.dump(result_dict, f, indent=4)
