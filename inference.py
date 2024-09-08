@@ -117,7 +117,12 @@ def main(cfg: DictConfig):
 
     if cfg.test_icl:
         val_ds = ds["validation"]
-        train_ds = ds["train"]
+        if cfg.train_num != -1:
+            train_ds = ds["train"].select(
+                random.sample(range(len(ds["train"])), cfg.train_num)
+            )
+        else:
+            train_ds = ds["train"]
     else:
         val_ds = ds
 

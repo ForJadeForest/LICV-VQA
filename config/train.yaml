@@ -3,7 +3,7 @@ defaults:
   - data_cfg: icv_data
   - icv_module: icv_module
   - trainer: zero2
-  - lmm: idefics2-8B-base
+  - lmm: idefics-9B
   - prompt: ${lmm}_${data_cfg/task}
 
 seed: 426
