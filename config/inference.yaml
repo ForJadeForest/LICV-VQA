@@ -1,7 +1,7 @@
 defaults:
   - _self_
   - data_cfg: icv_data
-  - lmm: idefics2-8B-base
+  - lmm: idefics-9B
   - prompt: ${lmm}_${data_cfg/task}
 
 
@@ -10,6 +10,7 @@ test_icv: True
 test_icl: False
 bs: 1
 test_num: -1
+train_num: -1
 few_shot_list: [1, 4, 8, 16, 32]
 
 run_name: debug
