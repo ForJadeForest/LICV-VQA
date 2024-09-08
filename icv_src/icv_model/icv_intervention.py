@@ -31,7 +31,7 @@ class LearnableICVInterventionLMM(nn.Module):
             )
             self.layer_to_icv_index = {
                 int(layer_id): int(icv_idx)
-                for layer_id, icv_idx in enumerate(self.intervention_layers)
+                for icv_idx, layer_id in enumerate(self.intervention_layers)
             }
             logger.info(f"The layer_to_icv_index is {self.layer_to_icv_index}")
             self.intervention_enabled = True
