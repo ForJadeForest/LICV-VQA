@@ -97,7 +97,7 @@ def postprocess(cfg, save_path):
         checkpoint = torch.load(output_file)
         params_name = list(checkpoint["state_dict"].keys())
         for name in params_name:
-            if "lmm" in name:
+            if "lmm" in name or "interface.model" in name:
                 checkpoint["state_dict"].pop(name)
         checkpoint["state_dict"]["use_sigmoid"] = getattr(
             cfg.icv_module.icv_encoder, "use_sigmoid", None
