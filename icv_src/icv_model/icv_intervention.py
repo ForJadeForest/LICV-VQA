@@ -97,13 +97,33 @@ class LearnableICVInterventionLMM(nn.Module):
             )
         return nullcontext()
 
-    def forward(self, input_data, icv=None):
+    def forward(self, icv=None, *args, **kwargs):
+        """
+        Forward pass of the model with optional ICV intervention.
+
+        Args:
+            icv: Input control variable.
+            *args: Variable length argument list of lmm.forward().
+            **kwargs: Arbitrary keyword arguments of lmm.forward().
+
+        Returns:
+            The output of the model's forward pass.
+        """
         with self._get_context_manager(icv, retain_grad=True):
-            return self.lmm(**input_data)
+            return self.lmm(*args, **kwargs)
 
-    def generate(self, input_data, generation_args=None, icv=None):
-        if generation_args is None:
-            generation_args = {}
+    def generate(self, icv=None, *args, **kwargs):
+        """
+        Generate output using the specified ICV model with optional ICV intervention.
 
+        Parameters:
+            icv (ICVModel): The ICV model to use for generation.
+            *args: Variable length argument list of lmm.generate().
+            **kwargs: Arbitrary keyword arguments of lmm.generate().
+
+        Returns:
+            The generated output.
+
+        """
         with self._get_context_manager(icv, retain_grad=False):
-            return self.lmm.generate(**input_data, **generation_args)
+            return self.lmm.generate(*args, **kwargs)

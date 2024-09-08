@@ -95,14 +95,14 @@ class VQAICVModule(pl.LightningModule):
             query_inputs["labels"] = query_inputs["input_ids"]
 
         self.icv_model.toggle_intervention(True)
-        icv_outputs = self.icv_model(query_inputs, icv=icv)
+        icv_outputs = self.icv_model(**query_inputs, icv=icv)
 
         if self.module_cfg.only_hard_loss:
             return {"loss": icv_outputs["loss"]}, icv_encoder_output
         icv_logits = icv_outputs["logits"]
         with torch.no_grad():
             self.icv_model.toggle_intervention(False)
-            ice_logits = self.icv_model(inputs)["logits"]
+            ice_logits = self.icv_model(**inputs)["logits"]
 
         loss = 0.0
         kl_loss = self.calculate_kl_divergence(
@@ -148,11 +148,9 @@ class VQAICVModule(pl.LightningModule):
         return mask
 
     def decay_temperature(self):
-        # 判断ratio的类型并计算衰减的步数间隔
         if self.module_cfg.decay_ratio < 0:
             return
 
-        # 如果当前步数达到衰减步数，进行衰减
         if self.global_step % self.decay_per_step == 0 and self.global_step != 0:
             self.temperature = torch.clip(
                 self.temperature * self.module_cfg.decay_ratio,
@@ -171,7 +169,6 @@ class VQAICVModule(pl.LightningModule):
         return loss_dict["loss"]
 
     def configure_optimizers(self):
-
         params = []
         for name, param in self.icv_encoder.named_parameters():
             if not param.requires_grad:
@@ -212,6 +209,7 @@ class VQAICVModule(pl.LightningModule):
         }
 
     def on_save_checkpoint(self, checkpoint):
+        # Only save the icv weights
         params_name = list(checkpoint["state_dict"].keys())
         for name in params_name:
             if name.startswith("model"):

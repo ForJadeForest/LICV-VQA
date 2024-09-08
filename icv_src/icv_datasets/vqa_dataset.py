@@ -40,6 +40,8 @@ class VQADataset(Dataset):
                 val_coco_dataset_root,
                 split=split,
             )
+        else:
+            raise ValueError(f"Dataset {name} not supported")
         self.query_ds = ds
         if filter_ques_type:
             self.query_ds = ds.filter(
@@ -57,8 +59,10 @@ class VQADataset(Dataset):
             self.query_ds = self.query_ds.select(random_select_idx)
         if select_from_query:
             self.select_ds = self.query_ds
+            logger.info("only select from query dataset")
         else:
             self.select_ds = ds
+            logger.info("select from all dataset")
         self.few_shot_num = few_shot_num
         self.instruction = instruction
         logger.info(
@@ -69,6 +73,18 @@ class VQADataset(Dataset):
         return len(self.query_ds)
 
     def __getitem__(self, index):
+        """
+        Retrieves an item from the VQA dataset at the given index.
+
+        Args:
+            index (int): The index of the item to retrieve.
+
+        Returns:
+            dict: A dictionary containing the following keys:
+                - "ice_prompt": A list of prompts for the in-context examples.
+                - "query_prompt": A list of prompts for the query item.
+                - "query_x": A list containing the query item's image and text.
+        """
         query_item = self.query_ds[index]
 
         few_shot_index = np.random.choice(
