@@ -310,7 +310,7 @@ def generate_answers(
     if in_context_vector is not None:
         icv = alpha.unsqueeze(dim=-1) * in_context_vector
 
-    generated_out = model.generate(inputs, generate_kwargs, icv=icv)
+    generated_out = model.generate(**inputs, **generate_kwargs, icv=icv)
     prompt_len = int(inputs["attention_mask"].shape[1])
     outputs = generated_out.tolist()
 
