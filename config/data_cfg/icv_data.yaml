@@ -1,5 +1,5 @@
 defaults:
-  - dataset: vqav2
+  - task: vqa
 
-bs: 16
+bs: 8
 num_workers: 4

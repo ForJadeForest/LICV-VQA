@@ -1,21 +1,27 @@
 defaults:
   - _self_
   - data_cfg: icv_data
+  - lmm: idefics-9B
+  - prompt: ${lmm}_${data_cfg/task}
 
 
 
 test_icv: True
 test_icl: False
-bs: 4
+bs: 1
 test_num: -1
-few_shot_list: [1, 2, 4, 8, 16, 32]
+train_num: -1
+few_shot_list: [1, 4, 8, 16, 32]
 
 run_name: debug
 result_dir: ${oc.env:RESULT_DIR}
 device: 'cuda'
 re_eval: False
 
-model_name_or_path: "${oc.env:MODEL_CPK_DIR}/idefics-9b"
+model_cpk_dir: ${oc.env:MODEL_CPK_DIR}
+model_name: "${icv_module.lmm.model_name}"
+use_rice: false
+ice_idx_list_cache: null
 
 generate_kwargs:
   max_new_tokens: 5

@@ -1,0 +1,6 @@
+defaults:
+  - vqa_base
+
+prompt_template: "Question:<Q> Short answer:<A>."
+query_prompt_template: "Question:<Q> Short answer:<A>"
+instruction: ""

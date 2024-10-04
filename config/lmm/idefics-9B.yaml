@@ -1,0 +1,12 @@
+defaults:
+  - lmm_base
+
+name: "idefics-9b"
+# args for intervention
+total_layers: 32
+layer_format: "model.model.layers.<LAYER_NUM>"
+intervention_layer: -1
+hidden_size: 4096
+
+# args for load model
+model_name: "idefics-9b"

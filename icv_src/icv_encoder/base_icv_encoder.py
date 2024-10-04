@@ -1,7 +1,5 @@
 import torch
-from loguru import logger
 from torch import nn
-from transformers import AutoConfig, AutoModel, AutoTokenizer
 from dataclasses import dataclass
 from typing import Optional
 

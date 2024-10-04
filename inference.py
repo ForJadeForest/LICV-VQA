@@ -1,5 +1,6 @@
 import datetime
 import json
+import os
 import random
 from pathlib import Path
 
@@ -10,28 +11,59 @@ from dotenv import load_dotenv
 from loguru import logger
 from omegaconf import DictConfig
 from tqdm import tqdm
-from transformers import IdeficsProcessor
 
-from icv_src.icv_datasets.vqa_dataset import load_okvqa_ds, load_vqav2_ds
-from icv_src.icv_model.icv_idefics import ICVIdeficsForVisionText2Text
-from icv_src.metrics import (
-    compute_vqa_accuracy,
-    postprocess_ok_vqa_generation,
-    postprocess_vqa_generation,
-)
-from utils import get_icv_cpk_path, get_inference_paths
+from icv_src.icv_model.icv_intervention import LearnableICVInterventionLMM
+from icv_src.metrics import compute_cider, compute_vqa_accuracy
+from lmm_icl_interface import LMMPromptManager
+from utils import get_icv_cpk_path, get_inference_paths, init_dataset, init_interface
+
+
+def evaluate_caption(results_dict, model_name, val_ann_path, post_process_fun):
+    pred_coco = []
+    for idx in results_dict:
+        pred_coco.append(
+            {
+                "image_id": results_dict[idx]["image_id"],
+                "caption": post_process_fun(
+                    results_dict[idx]["prediction"], model_name
+                ),
+            }
+        )
+    cider_score = compute_cider(pred_coco, val_ann_path)
+    return cider_score * 100
+
+
+def evaluate_vqa(
+    results_dict,
+    model_name,
+    val_ques_path,
+    val_ann_path,
+    post_process_fun,
+):
+    preds = []
+    for idx in results_dict:
+        preds.append(
+            {
+                "answer": post_process_fun(results_dict[idx]["prediction"], model_name)
+                .replace("\n", "")
+                .strip(),
+                "question_id": results_dict[idx]["question_id"],
+            }
+        )
+    acc = compute_vqa_accuracy(preds, val_ques_path, val_ann_path)
+    return acc
 
 
 @hydra.main(config_path="config", config_name="inference.yaml")
 def main(cfg: DictConfig):
     logger.info(f"begin run: {cfg.run_name}")
     result_dir = Path(cfg.result_dir)
-    model_name = cfg.model_name_or_path.split("/")[-1]
+    model_name = cfg.lmm.model_name
 
     save_dir, meta_info_dir, metric_file_path = get_inference_paths(
         result_dir=result_dir,
         model_name=model_name,
-        dataset_name=cfg.data_cfg.dataset.name,
+        dataset_name=cfg.data_cfg.task.datasets.name,
         run_name=cfg.run_name,
     )
 
@@ -52,115 +84,158 @@ def main(cfg: DictConfig):
 
     icv = None
     alpha = None
+    prompt_manager, interface, processor = init_interface(cfg)
     if cfg.test_icv:
         model_cpk_dir = get_icv_cpk_path(
             result_dir,
             model_name=model_name,
-            dataset_name=cfg.data_cfg.dataset.name,
+            dataset_name=cfg.data_cfg.task.datasets.name,
             run_name=cfg.run_name,
         )
-        icv_cpk = torch.load(model_cpk_dir / "icv_cpk.bin")
+        icv_cpk = torch.load(model_cpk_dir / "icv_cpk.pth")
         icv = icv_cpk["icv_encoder.icv"].to(cfg.device)
         alpha = icv_cpk["icv_encoder.alpha"].to(cfg.device)
+        lmm_args = dict(icv_cpk["lmm_args"])
         if icv_cpk.get("use_sigmoid", None):
             alpha = torch.sigmoid(alpha)
         logger.info("ICV loaded")
-
+        icv_model = LearnableICVInterventionLMM(
+            interface,
+            enable_intervention=True,
+            intervention_layer=lmm_args["intervention_layer"],
+            layer_format=lmm_args["layer_format"],
+            total_layers=lmm_args["total_layers"],
+        )
+    else:
+        icv_model = LearnableICVInterventionLMM(interface, enable_intervention=False)
     split = "validation"
     base_info = f"{str(datetime.datetime.now())}-{cfg.test_num=}-"
     if cfg.test_icl:
         split = None
 
-    if cfg.data_cfg.dataset.name == "vqav2":
-        ds = load_vqav2_ds(
-            cfg.data_cfg.dataset.root_dir,
-            cfg.data_cfg.dataset.train_coco_dataset_root,
-            cfg.data_cfg.dataset.val_coco_dataset_root,
-            split,
-            val_ann_file=cfg.data_cfg.dataset.val_ann_path,
-        )
-        post_process_fun = postprocess_vqa_generation
-    elif cfg.data_cfg.dataset.name == "okvqa":
-        ds = load_okvqa_ds(
-            cfg.data_cfg.dataset.root_dir,
-            cfg.data_cfg.dataset.train_coco_dataset_root,
-            cfg.data_cfg.dataset.val_coco_dataset_root,
-            split,
-        )
-        post_process_fun = postprocess_ok_vqa_generation
-    else:
-        raise ValueError(f"{cfg.data_cfg.dataset.name=} error")
+    ds, post_process_fun = init_dataset(cfg, split)
+
     if cfg.test_icl:
         val_ds = ds["validation"]
-        train_ds = ds["train"]
+        if cfg.train_num != -1:
+            train_ds = ds["train"].select(
+                random.sample(range(len(ds["train"])), cfg.train_num)
+            )
+        else:
+            train_ds = ds["train"]
     else:
         val_ds = ds
-    model = ICVIdeficsForVisionText2Text.from_pretrained(cfg.model_name_or_path)
-    model = model.to(cfg.device, torch.bfloat16)
-    processor = IdeficsProcessor.from_pretrained(cfg.model_name_or_path)
+
     if cfg.test_num != -1:
         val_ds = val_ds.select(range(cfg.test_num))
 
     if cfg.test_icv:
+        icv_model.toggle_intervention(True)
+        logger.info(f"{icv_model.intervention_enabled=}")
         results_dict = icv_inference(
             val_ds=val_ds,
-            model=model,
+            icv_model=icv_model,
+            prompt_manager=prompt_manager,
             processor=processor,
             bs=cfg.bs,
             generate_kwargs=cfg.generate_kwargs,
-            instruction=cfg.data_cfg.dataset.instruction,
+            instruction=cfg.prompt.instruction,
             in_context_vector=icv,
             alpha=alpha,
         )
-        preds = []
-        for idx in results_dict:
-            preds.append(
-                {
-                    "answer": post_process_fun(results_dict[idx]["prediction"])
-                    .replace("\n", "")
-                    .strip(),
-                    "question_id": results_dict[idx]["question_id"],
-                }
+        if cfg.data_cfg.task.task_name == "vqa":
+            acc = evaluate_vqa(
+                results_dict,
+                cfg.lmm.name,
+                cfg.data_cfg.task.datasets.val_ques_path,
+                cfg.data_cfg.task.datasets.val_ann_path,
+                post_process_fun,
             )
+            logger.info(f"{cfg.run_name} ACC: {acc['overall']}")
+            result_dict[base_info + "icv result"] = acc
+        elif cfg.data_cfg.task.task_name == "caption":
+            cider = evaluate_caption(
+                results_dict,
+                cfg.lmm.name,
+                cfg.data_cfg.task.datasets.val_coco_annotation_file,
+                post_process_fun,
+            )
+            logger.info(f"{cfg.run_name} CIDEr: {cider}")
 
-        val_ques_path = cfg.data_cfg.dataset.val_ques_path
-        val_ann_path = cfg.data_cfg.dataset.val_ann_path
-        acc = compute_vqa_accuracy(preds, val_ques_path, val_ann_path)
-        logger.info(f"{cfg.run_name} ACC: {acc['overall']}")
-        result_dict[base_info + "icv result"] = acc
+            result_dict[base_info + "icv result"] = cider
         with open(metric_file_path, "w") as f:
             json.dump(result_dict, f, indent=4)
         with open(meta_info_dir / f"{base_info}icv.json", "w") as f:
             json.dump(results_dict, f, indent=4)
 
     if cfg.test_icl:
+        icv_model.toggle_intervention(False)
+        if cfg.use_rice:
+            if not os.path.exists(os.path.join(cfg.result_dir, "cache")):
+                os.makedirs(os.path.join(cfg.result_dir, "cache"))
+            from icv_src.utils.mm_topk_retriver import MMTopkRetriever
+
+            base_info += "-RICE"
+            rice_retriever = MMTopkRetriever(
+                index_ds=train_ds,
+                test_ds=val_ds,
+                index_field="image",
+                mode="i2i",
+                batch_size=8,
+                num_workers=4,
+                cache_file=os.path.join(
+                    cfg.result_dir,
+                    "cache",
+                    f"{cfg.data_cfg.task.datasets.name}_{cfg.test_num}_rice_imgemb.pkl",
+                ),
+                device=icv_model.device,
+            )
         for shot_num in cfg.few_shot_list:
+            if cfg.use_rice:
+                ice_idx_list = rice_retriever.retrieve(shot_num)
+            elif cfg.ice_idx_list_cache is not None:
+                # A List[List]
+                ice_idx_list = json.load(open(cfg.ice_idx_list_cache))
+            else:
+                ice_idx_list = []
+                ice_idx_sample_list = list(range(len(train_ds)))
+                for i in range(len(val_ds)):
+                    ice_idx = random.sample(ice_idx_sample_list, shot_num)
+                    ice_idx_list.append(ice_idx)
 
             results_dict = icl_inference(
                 train_ds=train_ds,
                 val_ds=val_ds,
-                shot_num=shot_num,
-                model=model,
+                ice_idx_list=ice_idx_list,
+                model=icv_model,
+                prompt_manager=prompt_manager,
                 processor=processor,
                 bs=cfg.bs,
                 generate_kwargs=cfg.generate_kwargs,
-                instruction=cfg.data_cfg.dataset.instruction,
+                instruction=cfg.prompt.instruction,
             )
-            preds = []
-            for idx in results_dict:
-                preds.append(
-                    {
-                        "answer": post_process_fun(results_dict[idx]["prediction"])
-                        .replace("\n", "")
-                        .strip(),
-                        "question_id": results_dict[idx]["question_id"],
-                    }
+            if cfg.data_cfg.task.task_name == "vqa":
+                acc = evaluate_vqa(
+                    results_dict,
+                    cfg.lmm.name,
+                    cfg.data_cfg.task.datasets.val_ques_path,
+                    cfg.data_cfg.task.datasets.val_ann_path,
+                    post_process_fun,
                 )
+                logger.info(f"{cfg.run_name} ACC: {acc['overall']}")
+                result_dict[base_info + f"ICL shot_num: {shot_num} ACC result"] = acc
+            elif cfg.data_cfg.task.task_name == "caption":
+                cider = evaluate_caption(
+                    results_dict,
+                    cfg.lmm.name,
+                    cfg.data_cfg.task.datasets.val_coco_annotation_file,
+                    post_process_fun,
+                )
+                logger.info(f"{cfg.run_name} CIDEr: {cider}")
 
-            val_ques_path = cfg.data_cfg.dataset.val_ques_path
-            val_ann_path = cfg.data_cfg.dataset.val_ann_path
-            acc = compute_vqa_accuracy(preds, val_ques_path, val_ann_path)
-            result_dict[base_info + f"shot{shot_num} result"] = acc
+                result_dict[base_info + f"ICL shot_num: {shot_num} CIDEr result"] = (
+                    cider
+                )
 
             with open(metric_file_path, "w") as f:
                 json.dump(result_dict, f, indent=4)
@@ -171,7 +246,8 @@ def main(cfg: DictConfig):
 @torch.inference_mode()
 def icv_inference(
     val_ds,
-    model,
+    icv_model,
+    prompt_manager: LMMPromptManager,
     processor,
     bs,
     generate_kwargs,
@@ -190,19 +266,20 @@ def icv_inference(
         else:
             prompts = [[] for _ in range(bs)]
         for i, sample in enumerate(batch):
+
             prompts[i].extend(
                 [
                     sample["image"],
-                    f"Question:{sample['question']} Short answer:",
+                    prompt_manager.gen_query_text_without_label(sample),
                 ]
             )
 
-        query_inputs = processor(prompts)
-        query_inputs = {k: v.to(model.device) for k, v in query_inputs.items()}
+        query_inputs = processor.prepare_input(prompts)
+        query_inputs = {k: v.to(icv_model.lmm.device) for k, v in query_inputs.items()}
 
         generated = generate_answers(
             inputs=query_inputs,
-            model=model,
+            model=icv_model,
             processor=processor,
             generate_kwargs=generate_kwargs,
             in_context_vector=in_context_vector,
@@ -229,13 +306,11 @@ def generate_answers(
     in_context_vector=None,
     alpha=None,
 ):
-    with torch.no_grad():
-        generated_out = model.generate(
-            **inputs,
-            in_context_vector=in_context_vector,
-            alpha=alpha,
-            **generate_kwargs,
-        )
+    icv = None
+    if in_context_vector is not None:
+        icv = alpha.unsqueeze(dim=-1) * in_context_vector
+
+    generated_out = model.generate(**inputs, **generate_kwargs, icv=icv)
     prompt_len = int(inputs["attention_mask"].shape[1])
     outputs = generated_out.tolist()
 
@@ -250,8 +325,9 @@ def generate_answers(
 def icl_inference(
     train_ds,
     val_ds,
-    few_shot_num,
-    model,
+    ice_idx_list,
+    model: LearnableICVInterventionLMM,
+    prompt_manager: LMMPromptManager,
     processor,
     bs,
     generate_kwargs,
@@ -260,11 +336,6 @@ def icl_inference(
     results_dict = {}
 
     index = 0
-    ice_idx_list = []
-    ice_idx_sample_list = list(range(len(train_ds)))
-    for i in range(len(val_ds)):
-        ice_idx = random.sample(ice_idx_sample_list, few_shot_num)
-        ice_idx_list.append(ice_idx)
 
     for batch in more_itertools.chunked(tqdm(val_ds, total=len(val_ds)), bs):
         if instruction:
@@ -280,17 +351,17 @@ def icl_inference(
                 prompts[i].extend(
                     [
                         ice["image"],
-                        f"Question:{ice['question']} Short answer:{ice['answer']}",
+                        prompt_manager.gen_ice_text_with_label(ice, add_sep_token=True),
                     ]
                 )
             prompts[i].extend(
                 [
                     sample["image"],
-                    f"Question:{sample['question']} Short answer:",
+                    prompt_manager.gen_query_text_without_label(sample),
                 ]
             )
 
-        inputs = processor(prompts)
+        inputs = processor.prepare_input(prompts)
         inputs = {k: v.to(model.device) for k, v in inputs.items()}
         generated = generate_answers(
             inputs=inputs,
@@ -300,6 +371,7 @@ def icl_inference(
         )
 
         for i in range(len(batch)):
+            batch[i].pop("image")
             results_dict[index] = {"prediction": generated[i], **batch[i]}
             index += 1
 

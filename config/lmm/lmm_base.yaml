@@ -1,0 +1,3 @@
+
+precision: "bf16"
+device: ${device}

@@ -1,0 +1,5 @@
+defaults:
+  - caption_base
+
+prompt_template: "Caption:<X>"
+query_prompt_template: "Caption:<X>"

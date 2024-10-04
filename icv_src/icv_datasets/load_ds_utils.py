@@ -1,5 +1,6 @@
 import os
 import datasets
+from datasets import DatasetDict
 import json
 from pathlib import Path
 
@@ -186,59 +187,38 @@ def load_okvqa_ds(
     return ds
 
 
-def load_vizwiz_ds(
-    root_dir,
+def load_coco_ds(
+    train_coco_dataset_root,
+    train_coco_annotation_file,
+    val_coco_dataset_root,
+    val_coco_annotation_file,
     split=None,
 ):
-    root_dir = Path(root_dir)
-    train_ann = root_dir / "train.json"
-    val_ann = root_dir / "val.json"
-
-    def preprocess(ann_file):
-        return json.load(open(ann_file))
-
-    if split == "train":
-        train_ds_list = preprocess(train_ann)
-        ds = datasets.Dataset.from_list(train_ds_list)
-    elif split == "validation":
-        val_ds_list = preprocess(val_ann)
-        ds = datasets.Dataset.from_list(val_ds_list)
-    else:
-        train_ds_list = preprocess(train_ann)
-        val_ds_list = preprocess(val_ann)
-        ds = datasets.DatasetDict(
-            {
-                "train": datasets.Dataset.from_list(train_ds_list),
-                "validation": datasets.Dataset.from_list(val_ds_list),
-            }
-        )
-
-
-    def train_trans(x, idx):
-        img_path = [str(root_dir / "train" / f_n) for f_n in x["image"]]
-
-        x["image"] = img_path
-        x["idx"] = idx
-        x["answer"] = [a[0]["answer"] for a in x["answers"]]
-        return x
-
-    def val_trans(x, idx):
-        img_path = [str(root_dir / "val" / f_n) for f_n in x["image"]]
-        x["image"] = img_path
-        x["idx"] = idx
-        x["answer"] = [a[0]["answer"] for a in x["answers"]]
-        return x
+    from .coco_dataset import CocoDataset
 
     if split is None:
-        ds["train"] = ds["train"].map(
-            train_trans, batched=True, with_indices=True, num_proc=12
+        train_ds = CocoDataset(
+            train_coco_dataset_root,
+            train_coco_annotation_file,
         )
-        ds["validation"] = ds["validation"].map(
-            val_trans, batched=True, with_indices=True, num_proc=12
-        )
-    elif split == "train":
-        ds = ds.map(train_trans, batched=True, with_indices=True, num_proc=12)
-    elif split == "validation":
-        ds = ds.map(val_trans, batched=True, with_indices=True, num_proc=12)
-    ds = ds.cast_column("image", datasets.Image(decode=True))
+        val_ds = CocoDataset(val_coco_dataset_root, val_coco_annotation_file)
+        train_ds = datasets.Dataset.from_list(train_ds)
+        val_ds = datasets.Dataset.from_list(val_ds)
+        ds = DatasetDict({"train": train_ds, "validation": val_ds})
+        ds = ds.sort("image_id")
+        ds = ds.cast_column("image", datasets.Image(decode=True))
+    else:
+        if split == "train":
+            ds = CocoDataset(
+                train_coco_dataset_root,
+                train_coco_annotation_file,
+            )
+        elif split == "validation":
+            ds = CocoDataset(
+                val_coco_dataset_root,
+                val_coco_annotation_file,
+            )
+        ds = datasets.Dataset.from_list(ds)
+        ds = ds.sort("image_id")
+        ds = ds.cast_column("image", datasets.Image(decode=True))
     return ds

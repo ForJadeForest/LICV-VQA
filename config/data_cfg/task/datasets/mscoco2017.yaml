@@ -1,0 +1,14 @@
+task: captioning
+name: coco2017
+coco_root: ${oc.env:COCO_PATH}
+coco_version_root: ${data_cfg.task.datasets.coco_root}/mscoco2017
+version: 2017
+train_ds_len: 118287
+train_coco_dataset_root: ${data_cfg.task.datasets.coco_version_root}/train2017
+train_coco_annotation_file: ${data_cfg.task.datasets.coco_version_root}/annotations/captions_train2017.json
+val_coco_dataset_root: ${data_cfg.task.datasets.coco_version_root}/val2017
+val_coco_annotation_file: ${data_cfg.task.datasets.coco_version_root}/annotations/captions_val2017.json
+
+select_from_query: True
+max_train_size: 8000
+few_shot_num: 32

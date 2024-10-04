@@ -6,33 +6,44 @@ from loguru import logger
 from torch import optim
 from transformers import get_cosine_schedule_with_warmup
 
+from lmm_icl_interface import LMMInterface
+
 from .icv_encoder.global_icv_encoder import GlobalICVEncoder
-from .icv_model import ICVIdeficsForVisionText2Text
+from .icv_model.icv_intervention import LearnableICVInterventionLMM
 
 
 class VQAICVModule(pl.LightningModule):
     def __init__(
         self,
-        model: ICVIdeficsForVisionText2Text,
-        processor,
+        interface: LMMInterface,
         module_cfg,
+        lmm_cfg,
     ) -> None:
         super().__init__()
-        self.save_hyperparameters(ignore=["model", "processor"])
-        self.model = model
-        self.processor = processor
-
-        self.model.requires_grad_(False)
-        self.model.gradient_checkpointing_enable()
-
+        self.save_hyperparameters(ignore=["interface"])
         self.module_cfg = module_cfg
+        self.lmm_cfg = lmm_cfg
+        self.interface = interface
+
+        self.interface.requires_grad_(False)
+        if hasattr(self.interface.model, "gradient_checkpointing_enable"):
+            self.interface.model.gradient_checkpointing_enable()
+
+        self.icv_model = LearnableICVInterventionLMM(
+            interface,
+            enable_intervention=True,
+            intervention_layer=self.lmm_cfg.intervention_layer,
+            layer_format=self.lmm_cfg.layer_format,
+            total_layers=self.lmm_cfg.total_layers,
+        )
+
         icv_encoder_factor: GlobalICVEncoder = hydra.utils.instantiate(
             module_cfg.icv_encoder, _partial_=True
         )
-        layers = self.model.config.num_hidden_layers
-        hidden_dim = self.model.config.hidden_size
+        icv_layer_num = len(self.icv_model.intervention_layer_names)
+        hidden_dim = self.lmm_cfg.hidden_size
         self.icv_encoder = icv_encoder_factor(
-            llm_hidden_dim=hidden_dim, llm_layers=layers
+            lmm_hidden_dim=hidden_dim, lmm_layers=icv_layer_num
         )
 
         self.temperature = torch.nn.Parameter(
@@ -59,7 +70,7 @@ class VQAICVModule(pl.LightningModule):
 
     def forward(
         self,
-        query_input,
+        query_inputs,
         inputs,
         query_x_length,
         in_context_length,
@@ -70,32 +81,33 @@ class VQAICVModule(pl.LightningModule):
         query_input: bs, query_seq_len
         inputs: bs, ice_seq_len + query_seq_len,
         """
-        # - 1 为了去除query中的bos
-        original_mask_length = query_x_length + in_context_length - 1
-        original_mask = self.get_mask(inputs, original_mask_length)
-        query_mask = self.get_mask(query_input, query_x_length)
+        icl_context_mask = self.get_mask(inputs, in_context_length)
+        zero_shot_mask = self.get_mask(query_inputs, query_x_length)
 
         icv_encoder_output = self.icv_encoder()
-        labels = None
-        if self.module_cfg.hard_loss_weight:
-            labels = query_input["input_ids"]
 
-        icv_outputs = self.model(
-            **query_input,
-            in_context_vector=icv_encoder_output.in_context_vector,
-            alpha=icv_encoder_output.alpha,
-            labels=labels,
+        icv = (
+            icv_encoder_output.alpha.unsqueeze(dim=-1)
+            * icv_encoder_output.in_context_vector
         )
+
+        if self.module_cfg.hard_loss_weight:
+            query_inputs["labels"] = query_inputs["input_ids"]
+
+        self.icv_model.toggle_intervention(True)
+        icv_outputs = self.icv_model(**query_inputs, icv=icv)
+
         if self.module_cfg.only_hard_loss:
             return {"loss": icv_outputs["loss"]}, icv_encoder_output
         icv_logits = icv_outputs["logits"]
         with torch.no_grad():
-            ice_logits = self.model(**inputs)["logits"]
+            self.icv_model.toggle_intervention(False)
+            ice_logits = self.icv_model(**inputs)["logits"]
 
         loss = 0.0
         kl_loss = self.calculate_kl_divergence(
-            icv_logits[query_mask].view(-1, icv_logits.shape[-1]),
-            ice_logits[original_mask].view(-1, ice_logits.shape[-1]),
+            icv_logits[zero_shot_mask].view(-1, icv_logits.shape[-1]),
+            ice_logits[icl_context_mask].view(-1, ice_logits.shape[-1]),
         )
         loss += kl_loss
 
@@ -122,22 +134,23 @@ class VQAICVModule(pl.LightningModule):
         ) * self.temperature**2
 
     def get_mask(self, inputs, mask_length):
-        mask_shape = inputs["input_ids"].shape
+        mask_shape = inputs[self.interface.input_ids_field_name].shape
         bs, seq_len = mask_shape
-        device = inputs["input_ids"].device
+        device = inputs[self.interface.input_ids_field_name].device
         sequence_indices = (
             torch.arange(seq_len, device=device).unsqueeze(0).expand(bs, -1)
         )
         mask = sequence_indices >= mask_length.unsqueeze(dim=1)
-        mask[inputs.input_ids == self.processor.tokenizer.pad_token_id] = False
+        mask[
+            inputs[self.interface.input_ids_field_name]
+            == self.interface.tokenizer.pad_token_id
+        ] = False
         return mask
 
     def decay_temperature(self):
-        # 判断ratio的类型并计算衰减的步数间隔
         if self.module_cfg.decay_ratio < 0:
             return
 
-        # 如果当前步数达到衰减步数，进行衰减
         if self.global_step % self.decay_per_step == 0 and self.global_step != 0:
             self.temperature = torch.clip(
                 self.temperature * self.module_cfg.decay_ratio,
@@ -147,7 +160,7 @@ class VQAICVModule(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         self.decay_temperature()
         loss_dict, icv_encoder_output = self(**batch)
-        self.log_dict(loss_dict, sync_dist=True)
+        self.log_dict(loss_dict, sync_dist=True, prog_bar=True)
         if self.module_cfg.log_alpha:
             alpha = icv_encoder_output.alpha.squeeze()
             for i in range(len(alpha)):
@@ -156,7 +169,6 @@ class VQAICVModule(pl.LightningModule):
         return loss_dict["loss"]
 
     def configure_optimizers(self):
-
         params = []
         for name, param in self.icv_encoder.named_parameters():
             if not param.requires_grad:
@@ -197,6 +209,7 @@ class VQAICVModule(pl.LightningModule):
         }
 
     def on_save_checkpoint(self, checkpoint):
+        # Only save the icv weights
         params_name = list(checkpoint["state_dict"].keys())
         for name in params_name:
             if name.startswith("model"):
